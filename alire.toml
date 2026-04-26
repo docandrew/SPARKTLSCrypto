@@ -1,0 +1,19 @@
+name = "sparktlscrypto"
+description = "SPARK-verified crypto primitives for SPARKTLS"
+version = "0.0.1"
+
+authors = ["Jon Andrew"]
+maintainers = ["Jon Andrew <jonfandrew@fastmail.com>"]
+maintainers-logins = ["docandrew"]
+
+[[depends-on]]
+gnatprove = "^14.1.1"
+
+[[depends-on]]
+gnat = ">=14.2.1"
+
+[[depends-on]]
+sparknacl = "^4.0.0"
+
+[[pins]]
+sparknacl = { path = "../sparknacl" }
