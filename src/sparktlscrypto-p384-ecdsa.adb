@@ -10,13 +10,9 @@ package body SPARKTLSCrypto.P384.ECDSA with
    SPARK_Mode => On
 is
    --================================================================
-   --  Group order state (initialized at package elaboration; effectively
-   --  constant for the lifetime of the program).
+   --  N and N_M0I are declared in the spec (with Initial_Condition)
+   --  so the prover knows N.Len = W384 globally after elaboration.
    --================================================================
-
-   N     : Big_Nat with Constant_After_Elaboration;
-   N_M0I : Word    with Constant_After_Elaboration;
-
 
    --  Group order field operations (using BigNat directly)
    procedure Mul_Mod_N (D : out Big_Nat; A, B : Big_Nat) is

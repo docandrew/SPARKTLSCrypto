@@ -3,7 +3,8 @@
 --  Provides scalar multiplication on the P-384 curve
 --  for key exchange.  Reuses Big_Int infrastructure from RSA.
 
-with SPARKNaCl; use SPARKNaCl;
+with SPARKNaCl;                use SPARKNaCl;
+with SPARKTLSCrypto.P384.Field;
 
 package SPARKTLSCrypto.P384.Point with
    SPARK_Mode => On
@@ -14,7 +15,8 @@ is
      (PK_Out : out Byte_Seq;
       SK     : in  Byte_Seq)
    with Pre => PK_Out'First = 0 and PK_Out'Length = 97
-               and SK'First = 0 and SK'Length = 48;
+               and SK'First = 0 and SK'Length = 48
+               and Field.Initialized;
 
    --  ECDHE shared secret:
    --  Computes x-coordinate of [SK] * Peer_PK.
@@ -26,6 +28,7 @@ is
       SK      : in     Byte_Seq;
       Peer_PK : in     Byte_Seq)
    with Pre => SK'First = 0 and SK'Length = 48
-               and Peer_PK'First = 0 and Peer_PK'Length = 97;
+               and Peer_PK'First = 0 and Peer_PK'Length = 97
+               and Field.Initialized;
 
 end SPARKTLSCrypto.P384.Point;

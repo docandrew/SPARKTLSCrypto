@@ -6,8 +6,10 @@
 with SPARKNaCl;        use SPARKNaCl;
 with SPARKTLSCrypto.BigNat;  use SPARKTLSCrypto.BigNat;
 
-private package SPARKTLSCrypto.P384.Field with
-   SPARK_Mode => On
+package SPARKTLSCrypto.P384.Field with
+   SPARK_Mode        => On,
+   Initializes       => (P, P_M0I),
+   Initial_Condition => P.Len = W384
 is
    pragma Elaborate_Body;
    W384 : constant := 12;  --  384 bits = 12 x 32-bit words
@@ -55,6 +57,12 @@ is
    P     : Big_Nat with Constant_After_Elaboration;
    P_M0I : Word    with Constant_After_Elaboration;
 
+   --  Ghost predicate for cross-package propagation of the elaboration
+   --  invariant. Initial_Condition only assists analysis WITHIN the
+   --  package; clients must include this in their Pre's.
+   function Initialized return Boolean is (P.Len = W384)
+     with Ghost;
+
    --  Field arithmetic mod p (Montgomery form)
    --  All field elements must have Len = W384
    procedure FE_Add (D : out Big_Nat; A, B : Big_Nat)
@@ -101,12 +109,13 @@ is
 
    --  Build generator point in Montgomery/Jacobian form
    procedure Make_Generator (G : out Jacobian)
-   with Post => G.X.Len = W384 and G.Y.Len = W384 and G.Z.Len = W384
+   with Pre  => P.Len = W384,
+        Post => G.X.Len = W384 and G.Y.Len = W384 and G.Z.Len = W384
                 and P.Len = W384;
 
    --  Build a point from 48-byte big-endian X, Y coordinates
    procedure Make_Point (Pt : out Jacobian; Qx, Qy : Byte_Seq)
-   with Pre  => Qx'Length = 48 and Qy'Length = 48,
+   with Pre  => Qx'Length = 48 and Qy'Length = 48 and P.Len = W384,
         Post => Pt.X.Len = W384 and Pt.Y.Len = W384 and Pt.Z.Len = W384
                 and P.Len = W384;
 
