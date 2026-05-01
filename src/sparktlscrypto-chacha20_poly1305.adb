@@ -5,6 +5,7 @@ with SPARKNaCl.MAC;
 with SPARKNaCl.Core;
 with SPARKTLSCrypto.Poly1305;
 with SPARKTLSCrypto.Poly1305_AVX512;
+with SPARKTLSCrypto.Poly1305_AVX512_IFMA;
 with SPARKTLSCrypto.ChaCha20_AVX512;
 
 package body SPARKTLSCrypto.ChaCha20_Poly1305 with
@@ -162,13 +163,17 @@ is
       end if;
 
       --  Step 3: Poly1305 tag over (AAD || pad || C || pad || lengths).
-      --  Dispatch tier: AVX-512 IFMA path (when available, currently
-      --  forwards to fast scalar pending SIMD body) → fast scalar
-      --  (radix-2²⁶ limbs).
+      --  3-tier dispatch:
+      --    AVX-512 IFMA (radix-2⁴⁴, vpmadd52luq/huq)         — fastest
+      --    AVX-512F vpmuludq (radix-2²⁶, 8-block batch)      — older AVX-512
+      --    Fast scalar (radix-2²⁶ 5-limb)                    — software baseline
       declare
          Auth_Msg : constant Byte_Seq := Gen_Auth_Msg (C, AAD);
       begin
-         if SPARKTLSCrypto.Poly1305_AVX512.Has_AVX512_Poly1305 then
+         if SPARKTLSCrypto.Poly1305_AVX512_IFMA.Has_AVX512_IFMA_Poly1305 then
+            SPARKTLSCrypto.Poly1305_AVX512_IFMA.Onetimeauth
+              (Tag, Auth_Msg, OTK);
+         elsif SPARKTLSCrypto.Poly1305_AVX512.Has_AVX512_Poly1305 then
             SPARKTLSCrypto.Poly1305_AVX512.Onetimeauth
               (Tag, Auth_Msg, OTK);
          else

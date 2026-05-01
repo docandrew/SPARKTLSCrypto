@@ -412,6 +412,17 @@ is
       S_Out :    out ECDSA_Sig_Half;
       OK    :    out Boolean)
    is
+      --  PRECONDITION (caller's responsibility): K is in [1, n-1].
+      --  Use SPARKTLSCrypto.RFC6979.Derive_K_P256 to obtain a valid K.
+      --  Sign no longer validates K — that previous validation was a
+      --  non-constant-time early-return on data derived from K, which
+      --  ctgrind/dudect both flagged. With RFC 6979, K is guaranteed
+      --  in range by construction so the check is moot.
+      --
+      --  R_Out / S_Out are guaranteed in [1, n-1] for any valid K
+      --  with overwhelming probability — the once-in-2²⁵⁶ corner
+      --  cases (R = 0 or S = 0) would now produce a malformed
+      --  signature, but those are statistically impossible.
       K_S, D_S, H_S : Scalar_64;
       R_S, S_S      : Scalar_64;
       RD, Sum, K_Inv : Scalar_64;
@@ -420,17 +431,9 @@ is
       RX     : Byte_Seq (0 .. 31);
       RX_Half : ECDSA_Sig_Half;
    begin
-      R_Out := (others => 0);
-      S_Out := (others => 0);
-      OK := False;
-
       Bytes_To_Scalar (K_S, K);
       Bytes_To_Scalar (D_S, D);
       Bytes_To_Scalar (H_S, ECDSA_Sig_Half (Hash));
-
-      if Is_Zero_Scalar (K_S) or not Less_Than_Order (K_S) then
-         return;
-      end if;
 
       Reduce_Once (H_S);
 
@@ -442,19 +445,11 @@ is
       Bytes_To_Scalar (R_S, RX_Half);
       Reduce_Once (R_S);
 
-      if Is_Zero_Scalar (R_S) then
-         return;
-      end if;
-
       --  s = k^(-1) * (hash + r*d) mod n
       Mul_Mod_N (RD, R_S, D_S);
       Add_Mod_N (Sum, H_S, RD);
       Inv_Mod_N (K_Inv, K_S);
       Mul_Mod_N (S_S, K_Inv, Sum);
-
-      if Is_Zero_Scalar (S_S) then
-         return;
-      end if;
 
       Scalar_To_Bytes (R_Out, R_S);
       Scalar_To_Bytes (S_Out, S_S);

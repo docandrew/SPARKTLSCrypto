@@ -21,11 +21,16 @@ package SPARKTLSCrypto.Poly1305_AVX512 with
    SPARK_Mode => On,
    Elaborate_Body
 is
-   --  True iff the running CPU advertises AVX-512F + AVX-512 IFMA
-   --  (CPUID.7.0.EBX[16] for AVX-512F, CPUID.7.0.EBX[21] for IFMA).
+   --  True iff the running CPU advertises AVX-512F (CPUID.7.0.EBX[16]).
    --  Initialised once at elaboration; SPARK treats reads as
    --  side-effect-free thanks to Constant_After_Elaboration.
    Has_AVX512_Poly1305 : Boolean := False with Constant_After_Elaboration;
+
+   --  True iff the running CPU advertises AVX-512 IFMA52 (CPUID.7.0.EBX[21]).
+   --  When true, the 8-block batch dispatches to the IFMA fast path
+   --  using vpmadd52luq (one fused multiply-add per limb-row, replacing
+   --  vpmuludq+vpaddq pairs).
+   Has_AVX512_IFMA     : Boolean := False with Constant_After_Elaboration;
 
    --  Same signature as the scalar SPARKTLSCrypto.Poly1305.Onetimeauth
    --  so the dispatcher can swap in transparently.

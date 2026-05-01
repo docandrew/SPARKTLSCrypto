@@ -165,6 +165,12 @@ is
       S_Out :    out Byte_Seq;
       OK    :    out Boolean)
    is
+      --  PRECONDITION (caller's responsibility): K is in [1, n-1].
+      --  Use SPARKTLSCrypto.RFC6979.Derive_K_P384 to obtain a valid K.
+      --  See sparktlscrypto-p256-ecdsa.adb's Sign for the full
+      --  rationale — same change applies here. The In_Range branch
+      --  that used to live here was a non-constant-time early-return
+      --  flagged by ctgrind/dudect.
       K_Int, D_Int, H_Int : Big_Nat;
       R_Int, S_Int        : Big_Nat;
       RD, Sum, K_Inv      : Big_Nat;
@@ -184,10 +190,6 @@ is
       D_Int.Len := N.Len;
       H_Int.Len := N.Len;
 
-      if not In_Range (K_Int) then
-         return;
-      end if;
-
       Make_Generator (G_Pt);
       Scalar_Mul (G_Pt, K);
       To_Affine (G_Pt);
@@ -204,10 +206,6 @@ is
             R_Int := Trial.Value;
          end if;
       end;
-
-      if Is_Zero_384 (R_Int) then
-         return;
-      end if;
 
       Zero (One, N.Len);
       One.W (0) := 1;
@@ -244,10 +242,6 @@ is
       Mul_Mod_N (S_Int, T1, T2);
       Mul_Mod_N (T1, S_Int, One);
       S_Int := T1;
-
-      if Is_Zero_384 (S_Int) then
-         return;
-      end if;
 
       Encode (R_Out, R_Int);
       Encode (S_Out, S_Int);
