@@ -20,6 +20,11 @@ is
      (Output :    out Bytes_16;
       M      : in     Byte_Seq;
       K      : in     SPARKNaCl.MAC.Poly_1305_Key)
-   with Pre => M'Last < N32'Last;
+   --  M must be non-empty (the AEAD always passes a >0-length auth
+   --  message — at least the 16-byte lengths block). M'Last bounded
+   --  so Pos+15 in the loop body stays within N32.
+   with Pre => M'Length > 0
+               and M'First >= 0
+               and M'Last <= N32'Last - 16;
 
 end SPARKTLSCrypto.Poly1305;

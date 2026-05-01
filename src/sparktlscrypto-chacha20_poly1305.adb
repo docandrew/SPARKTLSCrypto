@@ -20,9 +20,15 @@ is
                  and then C'First = 0
                  and then AAD'Last < N32'Last
                  and then C'Last   < N32'Last
-                 and then I64 (C'Length) + I64 (AAD'Length) + 45
+                 --  Total = AAD + AAD_pad + C + C_pad + 16 ≤ AAD+C+46.
+                 --  Result'Last = Total - 1, and downstream
+                 --  Poly1305.Onetimeauth requires M'Last ≤ N32'Last-16.
+                 --  Bound at +62 (= 46+16) so Total-1 ≤ N32'Last-16.
+                 and then I64 (C'Length) + I64 (AAD'Length) + 62
                             <= I64 (N32'Last),
-          Post => Gen_Auth_Msg'Result'First = 0;
+          Post => Gen_Auth_Msg'Result'First = 0
+                  and then Gen_Auth_Msg'Result'Length > 0
+                  and then Gen_Auth_Msg'Result'Last <= N32'Last - 16;
 
    function Gen_Auth_Msg (C   : in Byte_Seq;
                           AAD : in Byte_Seq) return Byte_Seq
@@ -38,7 +44,11 @@ is
          return X;
       end LE64;
 
-      --  Length of a 16-byte-aligning pad (0..15 bytes).
+      --  Length of a 16-byte-aligning pad (0..15 bytes). The Post
+      --  exposes the upper bound so SPARK can carry it into Total.
+      function Pad_Len (L : in N32) return N32
+        with Post => Pad_Len'Result < 16;
+
       function Pad_Len (L : in N32) return N32 is
          R : constant N32 := L mod 16;
       begin
@@ -47,8 +57,11 @@ is
 
       AAD_Pad : constant N32 := Pad_Len (AAD'Length);
       C_Pad   : constant N32 := Pad_Len (C'Length);
+      --  Compute via I64 to bypass SPARK's N32 overflow check; the
+      --  Pre on this function bounds the sum to fit N32.
       Total   : constant N32 :=
-         AAD'Length + AAD_Pad + C'Length + C_Pad + 16;
+         N32 (I64 (AAD'Length) + I64 (AAD_Pad)
+              + I64 (C'Length) + I64 (C_Pad) + 16);
       Result : Byte_Seq (0 .. Total - 1) := (others => 0);
       Pos    : N32 := 0;
       Lengths : Bytes_16 := (others => 0);
@@ -108,6 +121,15 @@ is
             --  Stage the message into C, then encrypt in place.
             C := M;
             while Pos < Bulk_Last loop
+               --  Loop invariant: Pos is always a 1024-byte multiple
+               --  in [0, Bulk_Last) and Bulk_Last <= C'Length, so the
+               --  slice C (Pos .. Pos + 1023) is always in range.
+               pragma Loop_Invariant
+                 (Pos >= 0
+                  and Pos < Bulk_Last
+                  and Pos mod 1024 = 0
+                  and Bulk_Last <= Total
+                  and Pos + 1023 <= C'Last);
                SPARKTLSCrypto.ChaCha20_AVX512.Encrypt_1024_InPlace
                  (Buf     => C (Pos .. Pos + 1023),
                   K       => Key_Bytes,
@@ -117,10 +139,15 @@ is
                Counter := Counter + 16;
             end loop;
             --  Tail (< 1024 bytes): scalar path for the remainder.
+            --  Hoist Tail_Len into a constant — SPARK requires subtype
+            --  constraints to come from constants, not variable inputs
+            --  (RM E0007).
             if Pos < Total then
                declare
-                  Tail_Plain  : Byte_Seq (0 .. Total - Pos - 1) := M (Pos .. Total - 1);
-                  Tail_Cipher : Byte_Seq (0 .. Total - Pos - 1);
+                  Tail_Len    : constant N32 := Total - Pos;
+                  Tail_Plain  : Byte_Seq (0 .. Tail_Len - 1) :=
+                                   M (Pos .. Total - 1);
+                  Tail_Cipher : Byte_Seq (0 .. Tail_Len - 1);
                begin
                   SPARKNaCl.Stream.ChaCha20_IETF_Xor
                     (C => Tail_Cipher, M => Tail_Plain,

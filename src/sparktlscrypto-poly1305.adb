@@ -22,8 +22,12 @@ is
    subtype U32 is Unsigned_32;
 
    --  Read a little-endian 4-byte u32 from M (P..P+3).
+   --  Pre uses subtraction (M'Last - P >= 3) instead of P + 3 <= M'Last
+   --  to avoid SPARK's "P+3 might overflow" check when P is near N32'Last.
    function Le32 (M : in Byte_Seq; P : in N32) return U32
-     with Pre => P >= M'First and then P + 3 <= M'Last;
+     with Pre => M'Last >= 3
+                 and then P >= M'First
+                 and then P <= M'Last - 3;
 
    function Le32 (M : in Byte_Seq; P : in N32) return U32 is
    begin
@@ -50,7 +54,10 @@ is
       Pos       : N32 := M'First;
       Len       : constant N32 := N32 (M'Length);
       End_Last  : constant N32 := M'Last;
-      Block     : Bytes_16;
+      --  Block is 16 bytes — the redundant zero-fill at declaration
+      --  is cheaper than the SPARK ceremony Relaxed_Initialization
+      --  would need, and runs once per Onetimeauth call.
+      Block     : Bytes_16 := (others => 0);
       Remaining : N32;
 
       Key_Bytes : constant Bytes_32 := SPARKNaCl.MAC.Serialize (K);
@@ -58,17 +65,19 @@ is
       --  Mask for one 26-bit limb.
       M26 : constant U64 := 16#03FF_FFFF#;
 
-      --  Process one 16-byte block (already loaded into Block, with the
-      --  high "1" bit folded in by caller via Hi_Bit).
-      procedure Process_Block (Hi_Bit : in U64);
+      --  Process one 16-byte block (B fully initialized, high "1" bit
+      --  folded in by caller via Hi_Bit). Taking B as an in parameter
+      --  makes the Block-is-initialized requirement explicit at the
+      --  call site rather than hidden in shared state.
+      procedure Process_Block (B : in Bytes_16; Hi_Bit : in U64);
 
-      procedure Process_Block (Hi_Bit : in U64) is
+      procedure Process_Block (B : in Bytes_16; Hi_Bit : in U64) is
          t0, t1, t2, t3 : U32;
       begin
-         t0 := Le32 (Byte_Seq (Block),  0);
-         t1 := Le32 (Byte_Seq (Block),  4);
-         t2 := Le32 (Byte_Seq (Block),  8);
-         t3 := Le32 (Byte_Seq (Block), 12);
+         t0 := Le32 (Byte_Seq (B),  0);
+         t1 := Le32 (Byte_Seq (B),  4);
+         t2 := Le32 (Byte_Seq (B),  8);
+         t3 := Le32 (Byte_Seq (B), 12);
 
          --  h += message-as-5-limbs (radix 2^26, with high bit = Hi_Bit).
          h0 := h0 + (U64 (t0)                                          and M26);
@@ -104,6 +113,10 @@ is
       end Process_Block;
 
    begin
+      --  Zero Output up front so SPARK can prove it's fully initialized
+      --  on every return path; the final-tag write below overwrites it.
+      Output := (others => 0);
+
       --  Extract clamped r from K[0..15] (RFC 8439 §2.5.2).
       --  Clamp = clear top 4 bits of bytes 3,7,11,15 (mask 0x0F)
       --          clear bottom 2 bits of bytes 4,8,12  (mask 0xFC)
@@ -124,13 +137,17 @@ is
       s3 := r3 * 5;
       s4 := r4 * 5;
 
-      --  Process whole 16-byte blocks.
-      while Pos + 15 <= End_Last loop
-         pragma Loop_Invariant (Pos + 15 <= End_Last);
-         for I in 0 .. 15 loop
-            Block (N32 (I)) := M (Pos + N32 (I));
+      --  Process whole 16-byte blocks. Loop invariant bounds Pos so
+      --  Pos + 15 stays in N32 (M'Last <= N32'Last - 16 from spec Pre).
+      while Pos <= End_Last - 15 loop
+         pragma Loop_Invariant
+           (Pos >= M'First and Pos <= End_Last - 15);
+         for I in N32 range 0 .. 15 loop
+            pragma Loop_Invariant
+              (Pos >= M'First and Pos + 15 <= End_Last);
+            Block (I) := M (Pos + I);
          end loop;
-         Process_Block (1);
+         Process_Block (Block, 1);
          Pos := Pos + 16;
       end loop;
 
@@ -139,13 +156,13 @@ is
       if Pos <= End_Last then
          Remaining := End_Last - Pos + 1;
          Block := (others => 0);
-         for I in 0 .. Remaining - 1 loop
+         for I in N32 range 0 .. Remaining - 1 loop
             pragma Loop_Invariant
               (I < Remaining and Pos + I <= End_Last);
             Block (I) := M (Pos + I);
          end loop;
          Block (Remaining) := 1;  -- explicit "1" terminator
-         Process_Block (0);       -- Hi_Bit = 0; the explicit byte does it
+         Process_Block (Block, 0); -- Hi_Bit = 0; the explicit byte does it
       end if;
 
       --  Final reduction: subtract p = 2^130 - 5 if h >= p, conditionally.
