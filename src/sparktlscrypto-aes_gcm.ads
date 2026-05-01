@@ -30,6 +30,23 @@ is
                M'Last   < N32'Last and then
                AAD'Last < N32'Last;
 
+   --  In-place AEAD: Buf holds the plaintext on entry and the
+   --  ciphertext on exit (XOR-with-keystream is in-place safe for
+   --  CTR mode).  Buf may have any First; the body indexes through
+   --  Buf'First + offset.  Lets callers (sparktls record layer)
+   --  encrypt directly into the destination Output buffer slice and
+   --  skip the intermediate Ciphertext allocation + 16 KB copy.
+   procedure Encrypt_InPlace
+     (Buf : in out Byte_Seq;
+      Tag :    out Bytes_16;
+      N   : in     Bytes_12;
+      K   : in     AES.AES128_Key;
+      AAD : in     Byte_Seq)
+   with Pre => AAD'First = 0
+               and Buf'Length > 0
+               and Buf'Last < N32'Last
+               and AAD'Last < N32'Last;
+
    procedure Decrypt
      (M       :    out Byte_Seq;
       Status  :    out Boolean;
@@ -64,6 +81,18 @@ is
                C'Length  = M'Length and then
                M'Last   < N32'Last and then
                AAD'Last < N32'Last;
+
+   --  In-place AES-256-GCM AEAD; see Encrypt_InPlace above.
+   procedure Encrypt_InPlace_256
+     (Buf : in out Byte_Seq;
+      Tag :    out Bytes_16;
+      N   : in     Bytes_12;
+      K   : in     AES.AES256_Key;
+      AAD : in     Byte_Seq)
+   with Pre => AAD'First = 0
+               and Buf'Length > 0
+               and Buf'Last < N32'Last
+               and AAD'Last < N32'Last;
 
    procedure Decrypt_256
      (M       :    out Byte_Seq;

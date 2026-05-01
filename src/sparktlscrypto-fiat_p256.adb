@@ -12,6 +12,12 @@ with Interfaces; use Interfaces;
 package body SPARKTLSCrypto.Fiat_P256 with
    SPARK_Mode => On
 is
+   --  Bignum carry chains routinely discard the final carry-out of an
+   --  Addcarryx / Subborrowx call. These show up as "unused assignment"
+   --  on the inlined Out2 := ... line; the pattern is intentional and
+   --  matches Fiat-Crypto's C reference output.
+   pragma Warnings (GNATProve, Off, "unused assignment");
+
 
    ----------------------------------------------------------------
    --  Fiat primitives — direct translation of the corresponding

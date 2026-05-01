@@ -38,7 +38,8 @@ is
    ---------------------------------------------------------------------------
    function Validate (Input : String) return Boolean
       with Post =>
-         (if ((Input'Length mod 4 = 0) and
+         Validate'Result =
+         (((Input'Length mod 4 = 0) and
          (for all C of Input =>
             C in 'a'..'z' | 'A' .. 'Z' | '0' .. '9' | '+' | '/' | '=') and
          (for all I in Input'Range =>
@@ -49,7 +50,7 @@ is
             Input (Input'Last - 1) = '=' then
             Input (Input'Last) = '=') and
          (Input'First = 1)) or
-         (Input'Length = 0) then Validate'Result = True);
+         (Input'Length = 0));
 
    ---------------------------------------------------------------------------
    -- Cast a String to a Base64_String type.

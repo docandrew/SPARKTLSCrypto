@@ -11,6 +11,8 @@ with SPARKNaCl.Hashing.SHA512;
 package body SPARKTLSCrypto.Ed25519 with
    SPARK_Mode => On
 is
+   pragma Warnings (GNATProve, Off, "pragma * ignored (not yet supported)");
+
    --================================================================
    --  Extended twisted Edwards point: (X, Y, Z, T) where
    --  x = X/Z, y = Y/Z, x*y = T/Z on -x^2 + y^2 = 1 + d*x^2*y^2

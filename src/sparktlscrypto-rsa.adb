@@ -232,7 +232,7 @@ is
          declare
             Input_Len : constant N32 := N32 (Seed_Len) + 4;
             Input     : Byte_Seq (0 .. Input_Len - 1) := (others => 0);
-            H_Out     : Byte_Seq (0 .. N32 (Hash_Len) - 1) := (others => 0);
+            H_Out     : Byte_Seq (0 .. N32 (Hash_Len) - 1);
          begin
             Input (0 .. N32 (Seed_Len) - 1) :=
                Seed (0 .. N32 (Seed_Len) - 1);
@@ -637,7 +637,7 @@ is
       declare
          M_Buf_Len : constant N32 := 8 + N32 (Hash_Len) + N32 (Salt_Len);
          M_Buf     : Byte_Seq (0 .. M_Buf_Len - 1) := (others => 0);
-         H         : Byte_Seq (0 .. N32 (Hash_Len) - 1) := (others => 0);
+         H         : Byte_Seq (0 .. N32 (Hash_Len) - 1);
       begin
          --  M_Buf(0..7) = 0x00 (already zeroed)
          M_Buf (8 .. 8 + N32 (Hash_Len) - 1) :=
@@ -699,7 +699,7 @@ is
       Sig_Len   :    out N32;
       OK        :    out Boolean)
    is
-      EM : Byte_Seq (0 .. N32 (Mod_Len) - 1) := (others => 0);
+      EM : Byte_Seq (0 .. N32 (Mod_Len) - 1);
    begin
       Signature := (others => 0);
       Sig_Len := 0;
