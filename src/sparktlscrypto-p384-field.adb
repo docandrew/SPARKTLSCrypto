@@ -134,6 +134,12 @@ is
       for I in 0 .. A.Len - 1 loop
          Dst.W (I) := (Mask and A.W (I)) or ((not Mask) and B.W (I));
       end loop;
+      --  Big_Nat invariant: words past Len must be zero. The original
+      --  in-place Point_Add maintained this via the FE_* primitives,
+      --  but CT_Select needs to do it explicitly.
+      for I in A.Len .. Max_Words - 1 loop
+         Dst.W (I) := 0;
+      end loop;
    end CT_Select_FE;
 
    --  Constant-time "is this field element zero?" returning a mask:
@@ -151,6 +157,20 @@ is
       return -Word (Boolean'Pos (R = 0));
    end FE_Zero_Mask;
 
+   --  Constant-time Point_Add. Always runs the full Jacobian
+   --  addition formula, then uses bit-mask selection to handle the
+   --  special cases (P1 = O or P2 = O). The previous version
+   --  early-returned on those conditions, which ctgrind correctly
+   --  flagged as a secret-dependent branch (the Z coordinates are
+   --  derived from the secret scalar via Scalar_Mul's intermediate
+   --  state).
+   --
+   --  NOTE: the H = 0 case (P1 = ±P2, requiring point doubling or
+   --  identity) is NOT handled here — for the Montgomery ladder
+   --  invariants used by Scalar_Mul (R1 = R0 + P, with R0 ≠ ±R1
+   --  always), H = 0 cannot occur. If Point_Add is ever used
+   --  outside that specific ladder context this formula will give
+   --  wrong results when P1 = ±P2.
    --  Constant-time Point_Add. Always runs the full Jacobian
    --  addition formula, then uses bit-mask selection to handle the
    --  special cases (P1 = O or P2 = O). The previous version
@@ -269,12 +289,15 @@ is
       Zero (R0.Z, W384);
       R1 := P_Pt;
 
-      --  Constant-time Montgomery ladder: instead of branching on
-      --  the secret bit B, conditionally swap R0/R1 with B as the
-      --  mask, then unconditionally do the (Add, Double) pair, then
-      --  swap back. Each iteration touches the same instructions in
-      --  the same order regardless of B — the previous if/else was
-      --  the line ctgrind flagged as a per-bit secret leak.
+      --  Constant-time Montgomery ladder. The previous `if B = 1
+      --  then ... else ... end if;` here was the line ctgrind flagged
+      --  as a per-bit secret leak.
+      --
+      --  CT trick: always do the "B=1" operation pair (R0 += R1; R1
+      --  doubled), but swap R0/R1 in/out when B=0 so the same
+      --  instructions effectively perform the "B=0" pair (R1 += R0;
+      --  R0 doubled). Mask = 0xFF..F when we want to swap, 0x00..0
+      --  otherwise — that's `-(B XOR 1)`.
       for Byte_Idx in K'Range loop
          pragma Loop_Invariant
            (R0.X.Len = W384 and R0.Y.Len = W384 and R0.Z.Len = W384
@@ -284,7 +307,7 @@ is
               (R0.X.Len = W384 and R0.Y.Len = W384 and R0.Z.Len = W384
                and R1.X.Len = W384 and R1.Y.Len = W384 and R1.Z.Len = W384);
             B    := Shift_Right (Word (K (Byte_Idx)), Bit) and 1;
-            Mask := -B;       --  0..0 if B=0, F..F if B=1
+            Mask := -(B xor 1);   -- swap when B=0; no swap when B=1
             CSwap_Point (R0, R1, Mask);
             Point_Add (R0, R1);
             Point_Double (R1);
@@ -298,9 +321,12 @@ is
    procedure To_Affine (Pt : in out Jacobian) is
       Z_Inv, Z_Inv2, Z_Inv3, Tmp : Big_Nat;
    begin
-      if FE_Is_Zero (Pt.Z) then
-         return;
-      end if;
+      --  PRECONDITION: Pt.Z must be non-zero (i.e. Pt is not O).
+      --  The previous early-return on FE_Is_Zero(Pt.Z) here was a
+      --  ctgrind-flagged secret-dependent branch. With RFC 6979 K
+      --  always in [1, n-1] and Q a valid (non-O) point, K*P from
+      --  Scalar_Mul is never O, so the check was always false in
+      --  practice anyway.
       FE_Inv (Z_Inv, Pt.Z);
       FE_Sqr (Z_Inv2, Z_Inv);
       FE_Mul (Z_Inv3, Z_Inv2, Z_Inv);

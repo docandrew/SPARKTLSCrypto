@@ -201,10 +201,13 @@ is
 
       declare
          Trial : constant Arith_Result := CT_Sub (R_Int, N, 1);
+         --  Use Trial.Value when R_Int >= N (Trial.Carry = 0). Done
+         --  via CT_Mux to avoid a secret-dependent branch.
+         Ctl   : constant Word := CT_Not (Trial.Carry);
       begin
-         if Trial.Carry = 0 then
-            R_Int := Trial.Value;
-         end if;
+         for I in 0 .. R_Int.Len - 1 loop
+            R_Int.W (I) := CT_Mux (Ctl, Trial.Value.W (I), R_Int.W (I));
+         end loop;
       end;
 
       Zero (One, N.Len);
@@ -219,18 +222,20 @@ is
       RD := T1;
 
       declare
-         --  TODO: CT_Add's Ctl parameter is a footgun (0=skip, 1=apply).
-         --  Redesign BigNat API to use a proper type or separate functions.
          Add_Res : constant Arith_Result := CT_Add (RD, H_Int, 1);
          Sub_Res : Arith_Result;
+         Ctl     : Word;
       begin
          Sum := Add_Res.Value;
          Sum.Len := N.Len;
-         --  Reduce: if carry from addition or Sum >= N, subtract N
+         --  Reduce: use Sub_Res.Value when (carry from add) OR
+         --  (Sum >= N, i.e. Sub_Res.Carry = 0). CT_Mux'd, branchless.
          Sub_Res := CT_Sub (Sum, N, 1);
-         if Add_Res.Carry /= 0 or Sub_Res.Carry = 0 then
-            Sum := Sub_Res.Value;
-         end if;
+         Ctl := CT_Neq (Add_Res.Carry, 0)
+                or CT_Eq (Sub_Res.Carry, 0);
+         for I in 0 .. Sum.Len - 1 loop
+            Sum.W (I) := CT_Mux (Ctl, Sub_Res.Value.W (I), Sum.W (I));
+         end loop;
       end;
 
       Inv_Mod_N (K_Inv, K_Int);

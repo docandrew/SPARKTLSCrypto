@@ -488,9 +488,14 @@ is
       --    b2 = bit i of quarter 1 (bytes 8..15)
       --    b3 = bit i of quarter 0 (bytes 0..7, MSB quarter)
       for Col in reverse 0 .. 63 loop
-         if QZ = 0 then
-            P256_Double (Q);
-         end if;
+         --  Always double Q (no branch on QZ). Doubling the point at
+         --  infinity (Z=0) gives O again — Z_new = 2*Y*Z stays 0 —
+         --  so doing it unconditionally is safe and ~1 extra
+         --  doubling per Mulgen on average. The previous `if QZ = 0
+         --  then ...` was a CT leak: K's leading-zero count
+         --  determined how many of these doublings were skipped, a
+         --  data-dependent timing variance dudect picked up.
+         P256_Double (Q);
 
          --  Extract 4-bit column index from each quarter
          Bit_Pos := Col mod 8;

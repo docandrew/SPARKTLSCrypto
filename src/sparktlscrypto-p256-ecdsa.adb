@@ -242,16 +242,26 @@ is
          R4 := Unsigned_64 (BW and 16#FFFF_FFFF_FFFF_FFFF#);
       end;
 
-      --  Step 5: Conditional subtract n (at most twice)
-      --  R_actual = R4 * 2^256 + R.  R_actual < 3n < 2^258.
-      --  Subtract n up to twice to bring into [0, n).
+      --  Step 5: Conditional subtract n (at most twice).
+      --  R_actual = R4 * 2^256 + R, R_actual < 3n < 2^258.
+      --  Subtract n up to twice to bring into [0, n). Done branch-
+      --  free with mask-select so timing doesn't depend on R/R4
+      --  values (which derive from secret K via Mul_Mod_N).
       for Round in 1 .. 2 loop
          Sub_Scalar (D, R, N64, Borrow);
-         if R4 > 0 or Borrow = 0 then
-            --  R_actual >= n: keep the subtraction
-            R := D;
-            R4 := R4 - Borrow;
-         end if;
+         declare
+            R4_NZ   : constant Unsigned_64 :=
+              (if R4 > 0 then 1 else 0);
+            Take    : constant Unsigned_64 := R4_NZ or (Borrow xor 1);
+            Mask    : constant Unsigned_64 := -Take;
+         begin
+            for I in 0 .. 3 loop
+               R (I) := (D (I) and Mask) or (R (I) and not Mask);
+            end loop;
+            --  Update R4: subtract Borrow*Take. When Take=1: R4 -=
+            --  Borrow. When Take=0: R4 unchanged. Both branch-free.
+            R4 := R4 - (Borrow and Take);
+         end;
       end loop;
       D := R;
    end Barrett_Reduce;
@@ -309,11 +319,18 @@ is
       --  so we must subtract.  Sub_Scalar gives the right 256-bit result
       --  even with the implicit high bit (Tmp = 2^256 + Sum - n).
       Sub_Scalar (Tmp, Sum, N64, Borrow);
-      if Unsigned_64 (CC) > 0 or Borrow = 0 then
-         D := Tmp;
-      else
-         D := Sum;
-      end if;
+      --  Branch-free CT reduction: use Tmp (= Sum - N) if CC > 0
+      --  (carry from add) OR Borrow = 0 (Sum >= N), else use Sum.
+      --  CC is 0 or 1 (carry-out of 2^64 add chain), Borrow is 0 or 1.
+      declare
+         Use_Tmp : constant Unsigned_64 :=
+           Unsigned_64 (CC) or (Borrow xor 1);
+         Mask    : constant Unsigned_64 := -Use_Tmp;
+      begin
+         for I in 0 .. 3 loop
+            D (I) := (Tmp (I) and Mask) or (Sum (I) and not Mask);
+         end loop;
+      end;
    end Add_Mod_N;
 
    ---------------------------------------------------------------
@@ -393,11 +410,18 @@ is
    is
       Tmp    : Scalar_64;
       Borrow : Unsigned_64;
+      Mask   : Unsigned_64;
    begin
       Sub_Scalar (Tmp, A, N64, Borrow);
-      if Borrow = 0 then
-         A := Tmp;
-      end if;
+      --  If Borrow = 0 (A >= N), use Tmp (= A - N). Otherwise keep A.
+      --  Branch-free via mask. The previous `if Borrow = 0 then A :=
+      --  Tmp; end if;` is constant-time IF the compiler emits cmov,
+      --  but a dudect timing test detected a residual variance —
+      --  this explicit mask version eliminates that ambiguity.
+      Mask := -(Borrow xor 1);  --  0xFF..F if Borrow=0, else 0
+      for I in A'Range loop
+         A (I) := (A (I) and not Mask) or (Tmp (I) and Mask);
+      end loop;
    end Reduce_Once;
 
    ---------------------------------------------------------------
