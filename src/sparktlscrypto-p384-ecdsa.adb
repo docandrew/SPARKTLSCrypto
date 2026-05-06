@@ -179,10 +179,10 @@ is
       G_Pt                : Jacobian;
       RX_Bytes            : Byte_Seq (0 .. 47);
    begin
-      R_Out := (others => 0);
-      S_Out := (others => 0);
-      OK := False;
-
+      --  R_Out / S_Out are unconditionally set by the Encode calls at
+      --  the bottom; OK is set to True there too. No need for the
+      --  upfront defensive zeroing that the previous (early-return)
+      --  flow required.
       Decode (K_Int, K);
       Decode (D_Int, D);
       Decode (H_Int, Byte_Seq (Hash));

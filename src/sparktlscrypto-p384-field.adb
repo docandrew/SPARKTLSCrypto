@@ -130,15 +130,16 @@ is
    procedure CT_Select_FE
      (Dst : out Big_Nat; Mask : Word; A, B : Big_Nat) is
    begin
+      --  Initialize all of Dst.W up front so SPARK can see the OUT
+      --  parameter is fully assigned. The two split loops (CT-blend
+      --  for [0..A.Len-1], then zeros for [A.Len..Max_Words-1]) that
+      --  used to be here covered the full range too, but flow
+      --  analysis couldn't see the union — this single up-front zero
+      --  is simpler and equally correct.
+      Dst.W := (others => 0);
       Dst.Len := A.Len;
       for I in 0 .. A.Len - 1 loop
          Dst.W (I) := (Mask and A.W (I)) or ((not Mask) and B.W (I));
-      end loop;
-      --  Big_Nat invariant: words past Len must be zero. The original
-      --  in-place Point_Add maintained this via the FE_* primitives,
-      --  but CT_Select needs to do it explicitly.
-      for I in A.Len .. Max_Words - 1 loop
-         Dst.W (I) := 0;
       end loop;
    end CT_Select_FE;
 

@@ -49,7 +49,7 @@ is
    --  on data that may be secret.
    ----------------------------------------------------------------
    procedure Reduce_And_Bias_P256 (V : in out Bytes_32) is
-      Diff   : Bytes_32 := (others => 0);
+      Diff   : Bytes_32;     --  every byte written by the loop below
       Borrow : Unsigned_16 := 0;
       Mask   : Byte;
       Z      : Byte := 0;
@@ -83,7 +83,7 @@ is
    end Reduce_And_Bias_P256;
 
    procedure Reduce_And_Bias_P384 (V : in out Bytes_48) is
-      Diff   : Bytes_48 := (others => 0);
+      Diff   : Bytes_48;     --  every byte written by the loop below
       Borrow : Unsigned_16 := 0;
       Mask   : Byte;
       Z      : Byte := 0;
@@ -120,7 +120,12 @@ is
       V         : Bytes_32 := (others => 16#01#);
       DRBG_Key  : Bytes_32 := (others => 16#00#);
       H_Octets  : Bytes_32 := H;   -- bits2octets(H) = H mod N
-      Buf       : Byte_Seq (0 .. 96);   -- V || sep || D || H_octets
+      --  Buf is fully populated by the slice writes below (32 + 1 +
+      --  32 + 32 = 97), but SPARK's flow analysis can't see that the
+      --  slices add up to cover the full range. Initializing here
+      --  silences the medium-severity "Buf might not be initialized"
+      --  check at each HMAC call site.
+      Buf       : Byte_Seq (0 .. 96) := (others => 0);
       Tmp       : SPARKTLSCrypto.Hashing.SHA256.Digest;
    begin
       --  bits2octets(H): for SHA-256 (256 bits = qlen), bits2int =
@@ -180,7 +185,7 @@ is
       V         : Bytes_48 := (others => 16#01#);
       DRBG_Key  : Bytes_48 := (others => 16#00#);
       H_Octets  : Bytes_48 := H;
-      Buf       : Byte_Seq (0 .. 144);
+      Buf       : Byte_Seq (0 .. 144) := (others => 0);
       Tmp       : SPARKNaCl.Hashing.SHA384.Digest;
    begin
       Reduce_And_Bias_P384 (H_Octets);

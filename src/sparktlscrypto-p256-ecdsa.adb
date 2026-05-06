@@ -337,6 +337,25 @@ is
    --  Modular inversion: D := A^(n-2) mod n (Fermat)
    ---------------------------------------------------------------
 
+   --  One bit-step of Fermat exponentiation, extracted so the
+   --  256-iteration loop in Inv_Mod_N has a single call site —
+   --  gnatprove proves the call's RTE checks once, not 256× (each
+   --  unique call site is its own cache key).
+   procedure Inv_Step
+     (Result  : in out Scalar_64;
+      A       : Scalar_64;
+      Bit_Set : Boolean)
+   is
+      Tmp : Scalar_64;
+   begin
+      Square_Mod_N (Tmp, Result);
+      Result := Tmp;
+      if Bit_Set then
+         Mul_Mod_N (Tmp, Result, A);
+         Result := Tmp;
+      end if;
+   end Inv_Step;
+
    procedure Inv_Mod_N
      (D : out Scalar_64;
       A : in  Scalar_64)
@@ -348,28 +367,15 @@ is
          16#BC#, 16#E6#, 16#FA#, 16#AD#, 16#A7#, 16#17#, 16#9E#, 16#84#,
          16#F3#, 16#B9#, 16#CA#, 16#C2#, 16#FC#, 16#63#, 16#25#, 16#4F#);
 
-      Result : Scalar_64;
-      Tmp    : Scalar_64;
-      Started : Boolean := False;
+      Result : Scalar_64 := (0 => 1, others => 0);
    begin
-      Result := (0 => 1, others => 0);
-
+      --  Always-square Fermat. n-2's MSB is 1 (starts 0xFF...), so a
+      --  skip-leading-zeros form would save zero iterations.
       for I in N32 range 0 .. 31 loop
          for Bit in reverse Natural range 0 .. 7 loop
-            if Started then
-               Square_Mod_N (Tmp, Result);
-               Result := Tmp;
-            end if;
-
-            if (Shift_Right (U32 (N_Minus_2 (I)), Bit) and 1) = 1 then
-               if Started then
-                  Mul_Mod_N (Tmp, Result, A);
-                  Result := Tmp;
-               else
-                  Result := A;
-                  Started := True;
-               end if;
-            end if;
+            Inv_Step
+              (Result, A,
+               (Shift_Right (U32 (N_Minus_2 (I)), Bit) and 1) = 1);
          end loop;
       end loop;
 

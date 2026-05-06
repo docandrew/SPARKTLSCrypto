@@ -683,15 +683,27 @@ is
       Computed_Tag := S;
       XOR_Block (Computed_Tag, EJ0);
 
-      --  Constant-time tag comparison (prevents timing oracle
-      --  that would allow tag forgery detection)
-      if not Equal (Byte_Seq (Computed_Tag), Byte_Seq (Tag)) then
-         return;
-      end if;
-
+      --  Branch-free tag check + decrypt. Always run the CTR
+      --  decryption; mask M to zero if the tag mismatches. This
+      --  removes the "skip decrypt on bad tag" branch that ctgrind
+      --  flagged — the timing leak it produced was strictly equal
+      --  to the public Status bit, but branch-free is the audit-
+      --  friendly version (defense-in-depth against future
+      --  refactors that might stop exposing Status, and against the
+      --  Lucky-13 class of bug that exists because "this branch is
+      --  fine" arguments are fragile).
       Increment_Counter (J0);
       AES_CTR_128 (M, C, RK, J0);
-      Status := True;
+      declare
+         OK_Mask : constant Byte :=
+           (if Equal (Byte_Seq (Computed_Tag), Byte_Seq (Tag))
+              then 16#FF# else 16#00#);
+      begin
+         for I in M'Range loop
+            M (I) := M (I) and OK_Mask;
+         end loop;
+         Status := OK_Mask = 16#FF#;
+      end;
    end Decrypt;
 
    --================================================================
@@ -921,14 +933,20 @@ is
       Computed_Tag := S;
       XOR_Block (Computed_Tag, EJ0);
 
-      --  Constant-time tag comparison
-      if not Equal (Byte_Seq (Computed_Tag), Byte_Seq (Tag)) then
-         return;
-      end if;
-
+      --  Branch-free tag check + decrypt. See Decrypt (AES-128) for
+      --  the full rationale.
       Increment_Counter (J0);
       AES_CTR_256 (M, C, RK, J0);
-      Status := True;
+      declare
+         OK_Mask : constant Byte :=
+           (if Equal (Byte_Seq (Computed_Tag), Byte_Seq (Tag))
+              then 16#FF# else 16#00#);
+      begin
+         for I in M'Range loop
+            M (I) := M (I) and OK_Mask;
+         end loop;
+         Status := OK_Mask = 16#FF#;
+      end;
    end Decrypt_256;
 
 end SPARKTLSCrypto.AES_GCM;
