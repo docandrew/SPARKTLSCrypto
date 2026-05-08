@@ -63,12 +63,14 @@ is
    procedure Cipher_16x_128_VAES_XOR
      (Buf     : in out Byte_Seq;        -- 256 bytes in/out
       Counter : in     Bytes_256;       -- 16 prebuilt counter blocks
-      Pre_RK  : in     SPARKTLSCrypto.AES_NI.Pre_Swapped_RKs_128);
+      Pre_RK  : in     SPARKTLSCrypto.AES_NI.Pre_Swapped_RKs_128)
+   with Pre => Buf'Length = 256;
 
    procedure Cipher_16x_256_VAES_XOR
      (Buf     : in out Byte_Seq;
       Counter : in     Bytes_256;
-      Pre_RK  : in     SPARKTLSCrypto.AES_NI.Pre_Swapped_RKs_256);
+      Pre_RK  : in     SPARKTLSCrypto.AES_NI.Pre_Swapped_RKs_256)
+   with Pre => Buf'Length = 256;
 
    --================================================================
    --  16-block aggregated GHASH on zmm (VPCLMULQDQ)
@@ -91,6 +93,7 @@ is
    procedure GHASH_16_Blocks
      (S        : in out Bytes_16;
       Blocks   : in     Byte_Seq;       --  exactly 256 bytes
-      H_Powers : in     Pre_H_Powers_16);
+      H_Powers : in     Pre_H_Powers_16)
+   with Pre => Blocks'Length = 256;
 
 end SPARKTLSCrypto.AES_GCM_AVX512;

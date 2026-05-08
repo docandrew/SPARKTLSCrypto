@@ -42,21 +42,53 @@ is
    --================================================================
    --  CPUID detection: returns (Has_AVX512F, Has_AVX512_IFMA).
    --  AVX-512F bit = CPUID.7.0.EBX[16]; IFMA bit = CPUID.7.0.EBX[21].
+   --  Also requires OS XCR0 state-save enablement; without it the
+   --  AVX-512 instructions would #UD and SIGILL the process.
    --================================================================
    procedure Detect_AVX512_Poly1305 (F, IFMA : out Boolean) is
-      EAX, EBX, ECX, EDX : Unsigned_32;
    begin
-      Asm ("cpuid",
-           Outputs  => (Unsigned_32'Asm_Output ("=a", EAX),
-                        Unsigned_32'Asm_Output ("=b", EBX),
-                        Unsigned_32'Asm_Output ("=c", ECX),
-                        Unsigned_32'Asm_Output ("=d", EDX)),
-           Inputs   => (Unsigned_32'Asm_Input ("a", 7),
-                        Unsigned_32'Asm_Input ("c", 0)),
-           Volatile => True);
-      pragma Unreferenced (EAX, ECX, EDX);
-      F    := (EBX and 16#0001_0000#) /= 0;  --  AVX-512F bit 16
-      IFMA := (EBX and 16#0020_0000#) /= 0;  --  AVX-512_IFMA bit 21
+      F := False; IFMA := False;
+      --  CPUID.1.ECX[27] = OSXSAVE
+      declare
+         EAX, EBX, ECX, EDX : Unsigned_32;
+      begin
+         Asm ("cpuid",
+              Outputs  => (Unsigned_32'Asm_Output ("=a", EAX),
+                           Unsigned_32'Asm_Output ("=b", EBX),
+                           Unsigned_32'Asm_Output ("=c", ECX),
+                           Unsigned_32'Asm_Output ("=d", EDX)),
+              Inputs   => (Unsigned_32'Asm_Input ("a", 1),
+                           Unsigned_32'Asm_Input ("c", 0)),
+              Volatile => True);
+         pragma Unreferenced (EAX, EBX, EDX);
+         if (ECX and 16#0800_0000#) = 0 then return; end if;
+      end;
+      declare
+         XCR0_Lo, XCR0_Hi : Unsigned_32;
+      begin
+         Asm ("xgetbv",
+              Outputs => (Unsigned_32'Asm_Output ("=a", XCR0_Lo),
+                          Unsigned_32'Asm_Output ("=d", XCR0_Hi)),
+              Inputs  => Unsigned_32'Asm_Input ("c", 0),
+              Volatile => True);
+         pragma Unreferenced (XCR0_Hi);
+         if (XCR0_Lo and 16#E6#) /= 16#E6# then return; end if;
+      end;
+      declare
+         EAX, EBX, ECX, EDX : Unsigned_32;
+      begin
+         Asm ("cpuid",
+              Outputs  => (Unsigned_32'Asm_Output ("=a", EAX),
+                           Unsigned_32'Asm_Output ("=b", EBX),
+                           Unsigned_32'Asm_Output ("=c", ECX),
+                           Unsigned_32'Asm_Output ("=d", EDX)),
+              Inputs   => (Unsigned_32'Asm_Input ("a", 7),
+                           Unsigned_32'Asm_Input ("c", 0)),
+              Volatile => True);
+         pragma Unreferenced (EAX, ECX, EDX);
+         F    := (EBX and 16#0001_0000#) /= 0;  --  AVX-512F bit 16
+         IFMA := (EBX and 16#0020_0000#) /= 0;  --  AVX-512_IFMA bit 21
+      end;
    end Detect_AVX512_Poly1305;
 
    --================================================================

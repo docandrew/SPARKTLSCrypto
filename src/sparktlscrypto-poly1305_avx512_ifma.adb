@@ -34,23 +34,51 @@ is
    M44 : constant U64 := 16#0FFF_FFFF_FFFF#;
 
    --================================================================
-   --  CPUID detection: returns true iff both AVX-512F (EBX[16]) and
-   --  AVX-512_IFMA (EBX[21]) are supported.
+   --  CPUID detection: AVX-512F (EBX[16]) + AVX-512_IFMA (EBX[21]),
+   --  plus XCR0 OS state-save enablement (XMM/YMM/Opmask/ZMM bits).
    --================================================================
    function Detect_AVX512_IFMA return Boolean is
-      EAX, EBX, ECX, EDX : Unsigned_32;
       Mask : constant Unsigned_32 := 16#0001_0000# or 16#0020_0000#;
    begin
-      Asm ("cpuid",
-           Outputs  => (Unsigned_32'Asm_Output ("=a", EAX),
-                        Unsigned_32'Asm_Output ("=b", EBX),
-                        Unsigned_32'Asm_Output ("=c", ECX),
-                        Unsigned_32'Asm_Output ("=d", EDX)),
-           Inputs   => (Unsigned_32'Asm_Input ("a", 7),
-                        Unsigned_32'Asm_Input ("c", 0)),
-           Volatile => True);
-      pragma Unreferenced (EAX, ECX, EDX);
-      return (EBX and Mask) = Mask;
+      declare
+         EAX, EBX, ECX, EDX : Unsigned_32;
+      begin
+         Asm ("cpuid",
+              Outputs  => (Unsigned_32'Asm_Output ("=a", EAX),
+                           Unsigned_32'Asm_Output ("=b", EBX),
+                           Unsigned_32'Asm_Output ("=c", ECX),
+                           Unsigned_32'Asm_Output ("=d", EDX)),
+              Inputs   => (Unsigned_32'Asm_Input ("a", 1),
+                           Unsigned_32'Asm_Input ("c", 0)),
+              Volatile => True);
+         pragma Unreferenced (EAX, EBX, EDX);
+         if (ECX and 16#0800_0000#) = 0 then return False; end if;
+      end;
+      declare
+         XCR0_Lo, XCR0_Hi : Unsigned_32;
+      begin
+         Asm ("xgetbv",
+              Outputs => (Unsigned_32'Asm_Output ("=a", XCR0_Lo),
+                          Unsigned_32'Asm_Output ("=d", XCR0_Hi)),
+              Inputs  => Unsigned_32'Asm_Input ("c", 0),
+              Volatile => True);
+         pragma Unreferenced (XCR0_Hi);
+         if (XCR0_Lo and 16#E6#) /= 16#E6# then return False; end if;
+      end;
+      declare
+         EAX, EBX, ECX, EDX : Unsigned_32;
+      begin
+         Asm ("cpuid",
+              Outputs  => (Unsigned_32'Asm_Output ("=a", EAX),
+                           Unsigned_32'Asm_Output ("=b", EBX),
+                           Unsigned_32'Asm_Output ("=c", ECX),
+                           Unsigned_32'Asm_Output ("=d", EDX)),
+              Inputs   => (Unsigned_32'Asm_Input ("a", 7),
+                           Unsigned_32'Asm_Input ("c", 0)),
+              Volatile => True);
+         pragma Unreferenced (EAX, ECX, EDX);
+         return (EBX and Mask) = Mask;
+      end;
    end Detect_AVX512_IFMA;
 
    --================================================================
@@ -376,15 +404,18 @@ is
    --  IFMA asm body, store the resulting m_limb_0/1/2 to memory so
    --  the test can compare against an Ada-side Block_To_Limbs_44.
    procedure Debug_Unpack
-     (Msg     : in  System.Address;   -- 128 bytes input
-      M_Out   : in  System.Address)   -- 3 × 8 × U64 output
+     (Msg     : in     Byte_Seq;       -- exactly 128 bytes
+      M_Out   :    out Byte_Seq)       -- exactly 192 bytes
    is
+      Msg_Addr   : constant System.Address := Msg (Msg'First)'Address;
+      M_Out_Addr : constant System.Address := M_Out (M_Out'First)'Address;
       Dummy_R, Dummy_S, Dummy_H : System.Address;
       type U64_Lane is array (0 .. 7) of U64;
       type Triplet is array (0 .. 2) of U64_Lane;
       Z3 : Triplet := (others => (others => 0));
       for Z3'Alignment use 64;
    begin
+      M_Out := (others => 0);  -- baseline init; asm overwrites
       Dummy_R := Z3'Address;
       Dummy_S := Z3'Address;
       Dummy_H := Z3'Address;
@@ -414,11 +445,11 @@ is
         "vmovdqu64 %%zmm11,  64(%4)"          & ASCII.LF & ASCII.HT &
         "vmovdqu64 %%zmm12, 128(%4)"          & ASCII.LF & ASCII.HT &
         "vzeroupper",
-        Inputs => (System.Address'Asm_Input ("r", Msg),
+        Inputs => (System.Address'Asm_Input ("r", Msg_Addr),
                    System.Address'Asm_Input ("r", Lo_Idx'Address),
                    System.Address'Asm_Input ("r", Hi_Idx'Address),
                    U64'Asm_Input ("r", M44),
-                   System.Address'Asm_Input ("r", M_Out)),
+                   System.Address'Asm_Input ("r", M_Out_Addr)),
         Clobber => "rax,xmm0,xmm1,xmm10,xmm11,xmm12,xmm14,xmm15,xmm16,xmm17,memory",
         Volatile => True);
       pragma Unreferenced (Dummy_R, Dummy_S, Dummy_H);

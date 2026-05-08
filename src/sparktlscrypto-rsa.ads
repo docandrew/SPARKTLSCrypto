@@ -1,7 +1,10 @@
---  SPARKTLS RSA-PSS-RSAE Signature Verification
+--  SPARKTLS RSA Signature Verification
 --  Ported from BearSSL i32 implementation (Thomas Pornin, MIT license)
 --
---  Verification only - no signing, no key generation.
+--  Verification:
+--    - RSA-PSS (RFC 8017 §9.1, EMSA-PSS)
+--    - RSA PKCS#1 v1.5 (RFC 8017 §9.2, EMSA-PKCS1-v1_5)
+--  Signing: PSS only.
 --  Supports RSA keys up to 4096 bits.
 --  Supports SHA-256, SHA-384, and SHA-512 hash variants.
 
@@ -91,6 +94,81 @@ is
                and then Signature'Last < N32'Last;
 
    function Verify_PSS_SHA512
+     (Hash      : in Bytes_64;
+      Modulus   : in Byte_Seq;
+      Mod_Len   : in N32;
+      Exponent  : in Unsigned_32;
+      Signature : in Byte_Seq;
+      Sig_Len   : in N32) return Boolean
+   with Pre => Mod_Len >= 64 and then Mod_Len <= Max_RSA_Bytes
+               and then Sig_Len = Mod_Len
+               and then Modulus'First = 0
+               and then Modulus'Last >= N32 (Mod_Len) - 1
+               and then Modulus'Last < N32'Last
+               and then Signature'First = 0
+               and then Signature'Last >= N32 (Sig_Len) - 1
+               and then Signature'Last < N32'Last;
+
+   --  Verify an RSA PKCS#1 v1.5 signature (EMSA-PKCS1-v1_5, RFC 8017 §9.2).
+   --
+   --  Hash_Len uniquely selects the DigestInfo prefix used during
+   --  verification (32 = SHA-256, 48 = SHA-384, 64 = SHA-512).
+   --  Returns True if the signature is valid.
+   function Verify_PKCS1_v1_5
+     (M_Hash    : in Byte_Seq;
+      Hash_Len  : in N32;
+      Modulus   : in Byte_Seq;
+      Mod_Len   : in N32;
+      Exponent  : in Unsigned_32;
+      Signature : in Byte_Seq;
+      Sig_Len   : in N32) return Boolean
+   with Pre => Mod_Len >= 64 and then Mod_Len <= Max_RSA_Bytes
+               and then Sig_Len = Mod_Len
+               and then Hash_Len in 32 | 48 | 64
+               and then M_Hash'First = 0
+               and then M_Hash'Last >= N32 (Hash_Len) - 1
+               and then Modulus'First = 0
+               and then Modulus'Last >= N32 (Mod_Len) - 1
+               and then Modulus'Last < N32'Last
+               and then Signature'First = 0
+               and then Signature'Last >= N32 (Sig_Len) - 1
+               and then Signature'Last < N32'Last;
+
+   --  Convenience wrappers
+
+   function Verify_PKCS1_v1_5_SHA256
+     (Hash      : in Bytes_32;
+      Modulus   : in Byte_Seq;
+      Mod_Len   : in N32;
+      Exponent  : in Unsigned_32;
+      Signature : in Byte_Seq;
+      Sig_Len   : in N32) return Boolean
+   with Pre => Mod_Len >= 64 and then Mod_Len <= Max_RSA_Bytes
+               and then Sig_Len = Mod_Len
+               and then Modulus'First = 0
+               and then Modulus'Last >= N32 (Mod_Len) - 1
+               and then Modulus'Last < N32'Last
+               and then Signature'First = 0
+               and then Signature'Last >= N32 (Sig_Len) - 1
+               and then Signature'Last < N32'Last;
+
+   function Verify_PKCS1_v1_5_SHA384
+     (Hash      : in Bytes_48;
+      Modulus   : in Byte_Seq;
+      Mod_Len   : in N32;
+      Exponent  : in Unsigned_32;
+      Signature : in Byte_Seq;
+      Sig_Len   : in N32) return Boolean
+   with Pre => Mod_Len >= 64 and then Mod_Len <= Max_RSA_Bytes
+               and then Sig_Len = Mod_Len
+               and then Modulus'First = 0
+               and then Modulus'Last >= N32 (Mod_Len) - 1
+               and then Modulus'Last < N32'Last
+               and then Signature'First = 0
+               and then Signature'Last >= N32 (Sig_Len) - 1
+               and then Signature'Last < N32'Last;
+
+   function Verify_PKCS1_v1_5_SHA512
      (Hash      : in Bytes_64;
       Modulus   : in Byte_Seq;
       Mod_Len   : in N32;

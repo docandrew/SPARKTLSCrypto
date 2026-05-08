@@ -41,9 +41,11 @@ is
    with Pre => M'Last < N32'Last;
 
    --  Diagnostic: takes a 128-byte message, runs only the asm-side
-   --  unpack+limb-extract, writes 3 × 8 × U64 lane-major into M_Out.
+   --  unpack+limb-extract, writes 3 × 8 × U64 lane-major into M_Out
+   --  (192 bytes).
    procedure Debug_Unpack
-     (Msg   : in  System.Address;
-      M_Out : in  System.Address);
+     (Msg   : in     Byte_Seq;     -- exactly 128 bytes
+      M_Out :    out Byte_Seq)     -- exactly 192 bytes
+   with Pre => Msg'Length = 128 and then M_Out'Length = 192;
 
 end SPARKTLSCrypto.Poly1305_AVX512_IFMA;

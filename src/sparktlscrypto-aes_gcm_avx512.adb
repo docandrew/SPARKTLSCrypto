@@ -80,27 +80,58 @@ is
    --    EBX[16] = AVX512F           (basic AVX-512 foundation)
    --    ECX[9]  = VAES              (AES on ymm/zmm)
    --    ECX[10] = VPCLMULQDQ        (carry-less multiply on ymm/zmm)
-   --
-   --  We also need the OS to have enabled XCR0 bits 5,6,7 (zmm state
-   --  saving on context switch). Modern Linux always does. Skip the
-   --  XCR0 check — if disabled, VAES would #UD and the running CPU
-   --  effectively doesn't have it.
+   --  Plus OS enablement (XCR0): bits 1,2,5,6,7 — XMM, YMM, Opmask,
+   --  ZMM_Hi256, Hi16_ZMM. Without these the OS won't save zmm state
+   --  on context switch and VAES/etc would #UD. Some VMs and seccomp
+   --  policies leave AVX-512 OS state disabled even when the CPU
+   --  exposes it; we must check XCR0 explicitly to avoid SIGILL.
 
    function Detect_AVX512_AES_GCM return Boolean is
-      EAX, EBX, ECX, EDX : Unsigned_32;
    begin
-      Asm ("cpuid",
-           Outputs  => (Unsigned_32'Asm_Output ("=a", EAX),
-                        Unsigned_32'Asm_Output ("=b", EBX),
-                        Unsigned_32'Asm_Output ("=c", ECX),
-                        Unsigned_32'Asm_Output ("=d", EDX)),
-           Inputs   => (Unsigned_32'Asm_Input ("a", 7),
-                        Unsigned_32'Asm_Input ("c", 0)),
-           Volatile => True);
-      pragma Unreferenced (EAX, EDX);
-      return (EBX and 16#0001_0000#) /= 0   -- AVX-512F
-         and (ECX and 16#0000_0200#) /= 0   -- VAES
-         and (ECX and 16#0000_0400#) /= 0;  -- VPCLMULQDQ
+      --  CPUID.1.ECX[27] = OSXSAVE: OS supports XGETBV/XSETBV.
+      declare
+         EAX, EBX, ECX, EDX : Unsigned_32;
+      begin
+         Asm ("cpuid",
+              Outputs  => (Unsigned_32'Asm_Output ("=a", EAX),
+                           Unsigned_32'Asm_Output ("=b", EBX),
+                           Unsigned_32'Asm_Output ("=c", ECX),
+                           Unsigned_32'Asm_Output ("=d", EDX)),
+              Inputs   => (Unsigned_32'Asm_Input ("a", 1),
+                           Unsigned_32'Asm_Input ("c", 0)),
+              Volatile => True);
+         pragma Unreferenced (EAX, EBX, EDX);
+         if (ECX and 16#0800_0000#) = 0 then return False; end if;
+      end;
+      --  XGETBV ECX=0: XCR0 → EDX:EAX.
+      declare
+         XCR0_Lo, XCR0_Hi : Unsigned_32;
+      begin
+         Asm ("xgetbv",
+              Outputs => (Unsigned_32'Asm_Output ("=a", XCR0_Lo),
+                          Unsigned_32'Asm_Output ("=d", XCR0_Hi)),
+              Inputs  => Unsigned_32'Asm_Input ("c", 0),
+              Volatile => True);
+         pragma Unreferenced (XCR0_Hi);
+         if (XCR0_Lo and 16#E6#) /= 16#E6# then return False; end if;
+      end;
+      --  CPUID.7.0 feature bits.
+      declare
+         EAX, EBX, ECX, EDX : Unsigned_32;
+      begin
+         Asm ("cpuid",
+              Outputs  => (Unsigned_32'Asm_Output ("=a", EAX),
+                           Unsigned_32'Asm_Output ("=b", EBX),
+                           Unsigned_32'Asm_Output ("=c", ECX),
+                           Unsigned_32'Asm_Output ("=d", EDX)),
+              Inputs   => (Unsigned_32'Asm_Input ("a", 7),
+                           Unsigned_32'Asm_Input ("c", 0)),
+              Volatile => True);
+         pragma Unreferenced (EAX, EDX);
+         return (EBX and 16#0001_0000#) /= 0   -- AVX-512F
+            and (ECX and 16#0000_0200#) /= 0   -- VAES
+            and (ECX and 16#0000_0400#) /= 0;  -- VPCLMULQDQ
+      end;
    end Detect_AVX512_AES_GCM;
 
    --================================================================

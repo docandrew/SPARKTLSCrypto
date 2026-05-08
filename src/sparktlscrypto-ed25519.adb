@@ -1135,6 +1135,31 @@ is
       SM (32 .. 63) := ModL (X);
    end Sign;
 
+   --  RFC 8032 §5.1.7: Ed25519 verification requires the scalar S
+   --  encoded in bytes [32..63] of the signature to satisfy 0 ≤ S < L.
+   --  Without this bound, an attacker who has one valid signature
+   --  (R, S) can produce a different signature (R, S + L) that is
+   --  mathematically equivalent and still verifies — breaking
+   --  signature non-malleability. Wycheproof tcId=63..66, 85 catch
+   --  exactly this.
+   --
+   --  Implementation: constant-time subtract-with-borrow comparing
+   --  S to L (both 256-bit, little-endian). Final borrow = 1 iff S < L.
+   function S_Below_L (S : Bytes_32) return Boolean is
+      Borrow : Unsigned_32 := 0;
+      Diff   : Unsigned_32;
+   begin
+      for I in N32 range 0 .. 31 loop
+         Diff := Unsigned_32 (S (I))
+               - Unsigned_32 (L (I))
+               - Borrow;
+         --  The high byte of Diff (post subtract) is 0xFF iff Diff
+         --  underflowed (i.e. S[I] - L[I] - Borrow < 0).
+         Borrow := Shift_Right (Diff, 31) and 1;
+      end loop;
+      return Borrow = 1;
+   end S_Below_L;
+
    procedure Open
      (M       :    out Byte_Seq;
       Valid   :    out Boolean;
@@ -1144,10 +1169,20 @@ is
    is
       T    : Bytes_32;
       P, Q : Ext_Point;
+      S    : Bytes_32;
    begin
       M := (others => 0);
       Msg_Len := -1;
       if SM'Length < 64 then
+         Valid := False;
+         return;
+      end if;
+
+      --  Enforce S < L (RFC 8032 §5.1.7) before any expensive crypto.
+      for I in N32 range 0 .. 31 loop
+         S (I) := SM (32 + I);
+      end loop;
+      if not S_Below_L (S) then
          Valid := False;
          return;
       end if;

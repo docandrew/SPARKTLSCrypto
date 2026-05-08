@@ -49,9 +49,24 @@ is
    --  Constant-time primitives
    --================================================================
 
+   --  Constant-time "is X equal to zero?", returning 1 iff X = 0.
+   --
+   --  Trick: for any X /= 0, exactly one of X or -X has its top bit
+   --  set (a non-zero unsigned value or its two's-complement negation
+   --  spans the high bit). For X = 0, both are 0. So
+   --    (X or -X) bit 31 = 1  iff  X /= 0
+   --  Shift_Right by 31 isolates that bit, and xor 1 inverts to
+   --  return 1-iff-zero.
+   --
+   --  Previous implementation used `Shift_Right (X, 1) or (X and 1)`
+   --  which always produces a value with bit 31 = 0 (Shift_Right
+   --  zero-extends), so `Shift_Right (..., 31)` was always 0 and
+   --  the function always returned 1 — silently breaking every
+   --  caller. The fix below mirrors the CT_Neq pattern used in
+   --  Bit_Length_Word.
    function CT_Eq0 (X : Unsigned_32) return Unsigned_32 is
-     (Shift_Right (Shift_Right (X, 1) or (X and 1), 31) xor 1);
-   --  1 if X=0, 0 otherwise (constant time)
+     (Shift_Right (X or (0 - X), 31) xor 1)
+   with Post => CT_Eq0'Result = (if X = 0 then 1 else 0);
 
    function Bit_Length_Word (X : Unsigned_32) return Unsigned_32 is
       function CT_Neq (A, B : Unsigned_32) return Unsigned_32 is
@@ -516,6 +531,189 @@ is
          Signature => Signature,
          Sig_Len   => Sig_Len);
    end Verify_PSS_SHA512;
+
+   --================================================================
+   --  PKCS#1 v1.5 verify (RFC 8017 §9.2, EMSA-PKCS1-v1_5)
+   --
+   --  Expected encoded message after RSA_Public:
+   --    EM = 0x00 || 0x01 || PS || 0x00 || T
+   --  where PS is at least 8 bytes of 0xFF (filler) and
+   --        T  = DigestInfo (DER, fixed by hash alg) || mHash.
+   --================================================================
+
+   --  DigestInfo DER prefixes for SHA-256 / SHA-384 / SHA-512.
+   --  Each is 19 bytes; followed by the hash. Reference: RFC 8017 §9.2,
+   --  Notes appendix.
+   DI_Len : constant := 19;
+
+   DI_SHA256 : constant Byte_Seq (0 .. DI_Len - 1) :=
+     (16#30#, 16#31#, 16#30#, 16#0d#, 16#06#, 16#09#, 16#60#, 16#86#,
+      16#48#, 16#01#, 16#65#, 16#03#, 16#04#, 16#02#, 16#01#, 16#05#,
+      16#00#, 16#04#, 16#20#);
+
+   DI_SHA384 : constant Byte_Seq (0 .. DI_Len - 1) :=
+     (16#30#, 16#41#, 16#30#, 16#0d#, 16#06#, 16#09#, 16#60#, 16#86#,
+      16#48#, 16#01#, 16#65#, 16#03#, 16#04#, 16#02#, 16#02#, 16#05#,
+      16#00#, 16#04#, 16#30#);
+
+   DI_SHA512 : constant Byte_Seq (0 .. DI_Len - 1) :=
+     (16#30#, 16#51#, 16#30#, 16#0d#, 16#06#, 16#09#, 16#60#, 16#86#,
+      16#48#, 16#01#, 16#65#, 16#03#, 16#04#, 16#02#, 16#03#, 16#05#,
+      16#00#, 16#04#, 16#40#);
+
+   function Verify_PKCS1_v1_5
+     (M_Hash    : in Byte_Seq;
+      Hash_Len  : in N32;
+      Modulus   : in Byte_Seq;
+      Mod_Len   : in N32;
+      Exponent  : in Unsigned_32;
+      Signature : in Byte_Seq;
+      Sig_Len   : in N32) return Boolean
+   is
+      X    : Byte_Seq (0 .. N32 (Sig_Len) - 1);
+      OK   : Boolean;
+      T_Len : constant N32 := DI_Len + Hash_Len;
+      Diff  : Byte := 0;
+   begin
+      X := Signature (Signature'First .. Signature'First + N32 (Sig_Len) - 1);
+
+      RSA_Public
+        (X       => X,
+         X_Len   => Natural (Sig_Len),
+         Modulus => Modulus,
+         Mod_Len => Natural (Mod_Len),
+         Exp     => Exponent,
+         OK      => OK);
+
+      if not OK then
+         return False;
+      end if;
+
+      --  Need room for: 0x00 || 0x01 || PS(>=8) || 0x00 || T
+      --  i.e. EM_Len >= 11 + T_Len.
+      if Mod_Len < 11 + T_Len then
+         return False;
+      end if;
+
+      --  Constant-time accumulate-on-mismatch over the full encoded
+      --  message. Bail-out is replaced by mask-OR so timing is fixed.
+      --  EM[0] must be 0x00.
+      Diff := Diff or X (0);
+      --  EM[1] must be 0x01.
+      Diff := Diff or (X (1) xor 16#01#);
+
+      --  PS region: bytes at indices 2 .. Mod_Len - T_Len - 2 must all
+      --  be 0xFF. (At least 8 bytes by the length check above.)
+      for I in N32 range 2 .. Mod_Len - T_Len - 2 loop
+         pragma Loop_Invariant
+           (I <= Mod_Len - T_Len - 2 and I >= 2 and Mod_Len <= X'Last + 1);
+         Diff := Diff or (X (I) xor 16#FF#);
+      end loop;
+
+      --  Separator byte at index Mod_Len - T_Len - 1 must be 0x00.
+      Diff := Diff or X (Mod_Len - T_Len - 1);
+
+      --  DigestInfo prefix at indices Mod_Len - T_Len .. Mod_Len - T_Len
+      --  + DI_Len - 1, selected by Hash_Len.
+      declare
+         DI_Start : constant N32 := Mod_Len - T_Len;
+      begin
+         case Hash_Len is
+            when 32 =>
+               for I in N32 range 0 .. DI_Len - 1 loop
+                  pragma Loop_Invariant
+                    (DI_Start + I <= X'Last and Mod_Len <= X'Last + 1);
+                  Diff := Diff or (X (DI_Start + I) xor DI_SHA256 (I));
+               end loop;
+            when 48 =>
+               for I in N32 range 0 .. DI_Len - 1 loop
+                  pragma Loop_Invariant
+                    (DI_Start + I <= X'Last and Mod_Len <= X'Last + 1);
+                  Diff := Diff or (X (DI_Start + I) xor DI_SHA384 (I));
+               end loop;
+            when 64 =>
+               for I in N32 range 0 .. DI_Len - 1 loop
+                  pragma Loop_Invariant
+                    (DI_Start + I <= X'Last and Mod_Len <= X'Last + 1);
+                  Diff := Diff or (X (DI_Start + I) xor DI_SHA512 (I));
+               end loop;
+            when others =>
+               return False;
+         end case;
+      end;
+
+      --  mHash at the tail.
+      declare
+         Hash_Start : constant N32 := Mod_Len - Hash_Len;
+      begin
+         for I in N32 range 0 .. Hash_Len - 1 loop
+            pragma Loop_Invariant
+              (Hash_Start + I <= X'Last and Mod_Len <= X'Last + 1);
+            Diff := Diff or (X (Hash_Start + I) xor M_Hash (I));
+         end loop;
+      end;
+
+      return Diff = 0;
+   end Verify_PKCS1_v1_5;
+
+   --  Convenience wrappers
+
+   function Verify_PKCS1_v1_5_SHA256
+     (Hash      : in Bytes_32;
+      Modulus   : in Byte_Seq;
+      Mod_Len   : in N32;
+      Exponent  : in Unsigned_32;
+      Signature : in Byte_Seq;
+      Sig_Len   : in N32) return Boolean
+   is
+   begin
+      return Verify_PKCS1_v1_5
+        (M_Hash    => Byte_Seq (Hash),
+         Hash_Len  => 32,
+         Modulus   => Modulus,
+         Mod_Len   => Mod_Len,
+         Exponent  => Exponent,
+         Signature => Signature,
+         Sig_Len   => Sig_Len);
+   end Verify_PKCS1_v1_5_SHA256;
+
+   function Verify_PKCS1_v1_5_SHA384
+     (Hash      : in Bytes_48;
+      Modulus   : in Byte_Seq;
+      Mod_Len   : in N32;
+      Exponent  : in Unsigned_32;
+      Signature : in Byte_Seq;
+      Sig_Len   : in N32) return Boolean
+   is
+   begin
+      return Verify_PKCS1_v1_5
+        (M_Hash    => Byte_Seq (Hash),
+         Hash_Len  => 48,
+         Modulus   => Modulus,
+         Mod_Len   => Mod_Len,
+         Exponent  => Exponent,
+         Signature => Signature,
+         Sig_Len   => Sig_Len);
+   end Verify_PKCS1_v1_5_SHA384;
+
+   function Verify_PKCS1_v1_5_SHA512
+     (Hash      : in Bytes_64;
+      Modulus   : in Byte_Seq;
+      Mod_Len   : in N32;
+      Exponent  : in Unsigned_32;
+      Signature : in Byte_Seq;
+      Sig_Len   : in N32) return Boolean
+   is
+   begin
+      return Verify_PKCS1_v1_5
+        (M_Hash    => Byte_Seq (Hash),
+         Hash_Len  => 64,
+         Modulus   => Modulus,
+         Mod_Len   => Mod_Len,
+         Exponent  => Exponent,
+         Signature => Signature,
+         Sig_Len   => Sig_Len);
+   end Verify_PKCS1_v1_5_SHA512;
 
    --================================================================
    --  RSA private key operation: X = X^D mod N

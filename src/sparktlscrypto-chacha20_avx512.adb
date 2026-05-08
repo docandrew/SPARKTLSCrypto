@@ -18,21 +18,50 @@ package body SPARKTLSCrypto.ChaCha20_AVX512 with
 is
 
    --================================================================
-   --  CPUID detection: AVX-512F (CPUID.7.0.EBX[16]).
+   --  CPUID detection: AVX-512F (CPUID.7.0.EBX[16]) plus OS state-save
+   --  enablement via XCR0 — without it AVX-512 instructions #UD.
    --================================================================
    function Detect_AVX512F return Boolean is
-      EAX, EBX, ECX, EDX : Unsigned_32;
    begin
-      Asm ("cpuid",
-           Outputs  => (Unsigned_32'Asm_Output ("=a", EAX),
-                        Unsigned_32'Asm_Output ("=b", EBX),
-                        Unsigned_32'Asm_Output ("=c", ECX),
-                        Unsigned_32'Asm_Output ("=d", EDX)),
-           Inputs   => (Unsigned_32'Asm_Input ("a", 7),
-                        Unsigned_32'Asm_Input ("c", 0)),
-           Volatile => True);
-      pragma Unreferenced (EAX, ECX, EDX);
-      return (EBX and 16#0001_0000#) /= 0;
+      declare
+         EAX, EBX, ECX, EDX : Unsigned_32;
+      begin
+         Asm ("cpuid",
+              Outputs  => (Unsigned_32'Asm_Output ("=a", EAX),
+                           Unsigned_32'Asm_Output ("=b", EBX),
+                           Unsigned_32'Asm_Output ("=c", ECX),
+                           Unsigned_32'Asm_Output ("=d", EDX)),
+              Inputs   => (Unsigned_32'Asm_Input ("a", 1),
+                           Unsigned_32'Asm_Input ("c", 0)),
+              Volatile => True);
+         pragma Unreferenced (EAX, EBX, EDX);
+         if (ECX and 16#0800_0000#) = 0 then return False; end if;
+      end;
+      declare
+         XCR0_Lo, XCR0_Hi : Unsigned_32;
+      begin
+         Asm ("xgetbv",
+              Outputs => (Unsigned_32'Asm_Output ("=a", XCR0_Lo),
+                          Unsigned_32'Asm_Output ("=d", XCR0_Hi)),
+              Inputs  => Unsigned_32'Asm_Input ("c", 0),
+              Volatile => True);
+         pragma Unreferenced (XCR0_Hi);
+         if (XCR0_Lo and 16#E6#) /= 16#E6# then return False; end if;
+      end;
+      declare
+         EAX, EBX, ECX, EDX : Unsigned_32;
+      begin
+         Asm ("cpuid",
+              Outputs  => (Unsigned_32'Asm_Output ("=a", EAX),
+                           Unsigned_32'Asm_Output ("=b", EBX),
+                           Unsigned_32'Asm_Output ("=c", ECX),
+                           Unsigned_32'Asm_Output ("=d", EDX)),
+              Inputs   => (Unsigned_32'Asm_Input ("a", 7),
+                           Unsigned_32'Asm_Input ("c", 0)),
+              Volatile => True);
+         pragma Unreferenced (EAX, ECX, EDX);
+         return (EBX and 16#0001_0000#) /= 0;
+      end;
    end Detect_AVX512F;
 
    --================================================================

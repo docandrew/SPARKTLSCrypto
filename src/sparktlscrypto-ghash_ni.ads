@@ -61,6 +61,7 @@ is
    procedure GHASH_4_Blocks
      (S        : in out Bytes_16;
       Blocks   : in     Byte_Seq;
-      H_Powers : in     Pre_H_Powers);
+      H_Powers : in     Pre_H_Powers)
+   with Pre => Blocks'Length = 64;
 
 end SPARKTLSCrypto.GHASH_NI;

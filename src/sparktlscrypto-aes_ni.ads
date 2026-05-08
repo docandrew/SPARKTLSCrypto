@@ -109,12 +109,14 @@ is
    procedure Cipher_4x_128_PreSw_XOR
      (Buf     : in out Byte_Seq;
       Counter : in     Bytes_64;
-      Pre_RK  : in     Pre_Swapped_RKs_128);
+      Pre_RK  : in     Pre_Swapped_RKs_128)
+   with Pre => Buf'Length = 64;
 
    procedure Cipher_4x_256_PreSw_XOR
      (Buf     : in out Byte_Seq;
       Counter : in     Bytes_64;
-      Pre_RK  : in     Pre_Swapped_RKs_256);
+      Pre_RK  : in     Pre_Swapped_RKs_256)
+   with Pre => Buf'Length = 64;
 
    --================================================================
    --  Fully fused AES-GCM stripe (Step 4)
@@ -135,14 +137,16 @@ is
       S        : in out Bytes_16;          -- GHASH accumulator
       Counter  : in     Bytes_64;          -- 4 prebuilt CTR blocks
       Pre_RK   : in     Pre_Swapped_RKs_128;
-      H_Powers : in     Pre_H_Powers);
+      H_Powers : in     Pre_H_Powers)
+   with Pre => Buf'Length = 64;
 
    procedure Encrypt_GCM_Stripe_4_256
      (Buf      : in out Byte_Seq;
       S        : in out Bytes_16;
       Counter  : in     Bytes_64;
       Pre_RK   : in     Pre_Swapped_RKs_256;
-      H_Powers : in     Pre_H_Powers);
+      H_Powers : in     Pre_H_Powers)
+   with Pre => Buf'Length = 64;
 
    --================================================================
    --  2-stripe pipelined AEAD (Step 6)
@@ -171,14 +175,16 @@ is
       S         : in out Bytes_16;
       Counter   : in     Bytes_64;
       Pre_RK    : in     Pre_Swapped_RKs_128;
-      H_Powers  : in     Pre_H_Powers);
+      H_Powers  : in     Pre_H_Powers)
+   with Pre => Buf'Length = 128;
 
    procedure Encrypt_GHASH_Pipelined_4_256
      (Buf       : in out Byte_Seq;
       S         : in out Bytes_16;
       Counter   : in     Bytes_64;
       Pre_RK    : in     Pre_Swapped_RKs_256;
-      H_Powers  : in     Pre_H_Powers);
+      H_Powers  : in     Pre_H_Powers)
+   with Pre => Buf'Length = 128;
 
    --================================================================
    --  Vectorized 4-block counter generation
