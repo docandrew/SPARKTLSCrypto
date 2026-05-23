@@ -965,4 +965,78 @@ is
       OK := True;
    end Sign_PSS;
 
+   --================================================================
+   --  Sign_PKCS1_v1_5 (RFC 8017 §8.2.1 + §9.2 EMSA-PKCS1-v1_5)
+   --
+   --  EM = 0x00 || 0x01 || PS || 0x00 || T
+   --    where PS is at least 8 bytes of 0xFF and
+   --          T  = DigestInfo (DI_SHA{256,384,512}) || mHash.
+   --================================================================
+   procedure Sign_PKCS1_v1_5
+     (M_Hash    : in     Byte_Seq;
+      Hash_Len  : in     N32;
+      Modulus   : in     Byte_Seq;
+      Mod_Len   : in     N32;
+      Priv_Exp  : in     Byte_Seq;
+      Signature :    out Byte_Seq;
+      Sig_Len   :    out N32;
+      OK        :    out Boolean)
+   is
+      EM    : Byte_Seq (0 .. N32 (Mod_Len) - 1);
+      T_Len : constant N32 := DI_Len + Hash_Len;
+   begin
+      Signature := (others => 0);
+      Sig_Len := 0;
+      OK := False;
+
+      --  Need room for: 0x00 || 0x01 || PS(>=8) || 0x00 || T
+      if Mod_Len < 11 + T_Len then
+         return;
+      end if;
+
+      EM := (others => 16#FF#);
+      EM (0) := 16#00#;
+      EM (1) := 16#01#;
+      --  Separator before T
+      EM (Mod_Len - T_Len - 1) := 16#00#;
+      --  DigestInfo
+      case Hash_Len is
+         when 32 =>
+            EM (Mod_Len - T_Len .. Mod_Len - T_Len + DI_Len - 1) :=
+               DI_SHA256;
+         when 48 =>
+            EM (Mod_Len - T_Len .. Mod_Len - T_Len + DI_Len - 1) :=
+               DI_SHA384;
+         when 64 =>
+            EM (Mod_Len - T_Len .. Mod_Len - T_Len + DI_Len - 1) :=
+               DI_SHA512;
+         when others =>
+            return;
+      end case;
+      --  mHash
+      EM (Mod_Len - Hash_Len .. Mod_Len - 1) :=
+         M_Hash (M_Hash'First .. M_Hash'First + Hash_Len - 1);
+
+      declare
+         Priv_OK : Boolean;
+      begin
+         RSA_Private
+           (X       => EM,
+            X_Len   => Natural (Mod_Len),
+            Modulus => Modulus,
+            Mod_Len => Natural (Mod_Len),
+            Exp     => Priv_Exp,
+            Exp_Len => Natural (Mod_Len),
+            OK      => Priv_OK);
+
+         if not Priv_OK then
+            return;
+         end if;
+      end;
+
+      Signature (0 .. N32 (Mod_Len) - 1) := EM;
+      Sig_Len := Mod_Len;
+      OK := True;
+   end Sign_PKCS1_v1_5;
+
 end SPARKTLSCrypto.RSA;

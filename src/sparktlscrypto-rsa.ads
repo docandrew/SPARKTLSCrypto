@@ -224,4 +224,36 @@ is
         Post => Sig_Len <= Mod_Len               --  signature <= modulus size
                 and Sig_Len <= Max_RSA_Bytes;     --  absolute bound
 
+   --  RSA PKCS#1 v1.5 sign (RFC 8017 §8.2.1, §9.2 EMSA-PKCS1-v1_5).
+   --  Hash_Len picks the DigestInfo prefix: 32=SHA256, 48=SHA384,
+   --  64=SHA512.
+   --  M_Hash    : message digest (Hash_Len bytes)
+   --  Modulus   : RSA modulus n (Mod_Len bytes, big-endian)
+   --  Priv_Exp  : RSA private exponent d (Mod_Len bytes, big-endian)
+   --  Signature : output buffer (at least Mod_Len bytes)
+   procedure Sign_PKCS1_v1_5
+     (M_Hash    : in     Byte_Seq;
+      Hash_Len  : in     N32;
+      Modulus   : in     Byte_Seq;
+      Mod_Len   : in     N32;
+      Priv_Exp  : in     Byte_Seq;
+      Signature :    out Byte_Seq;
+      Sig_Len   :    out N32;
+      OK        :    out Boolean)
+   with Pre => Mod_Len >= 64 and then Mod_Len <= Max_RSA_Bytes
+               and then Hash_Len in 32 | 48 | 64
+               and then M_Hash'First = 0
+               and then M_Hash'Last >= N32 (Hash_Len) - 1
+               and then Modulus'First = 0
+               and then Modulus'Last >= N32 (Mod_Len) - 1
+               and then Modulus'Last < N32'Last
+               and then Priv_Exp'First = 0
+               and then Priv_Exp'Last >= N32 (Mod_Len) - 1
+               and then Priv_Exp'Last < N32'Last
+               and then Signature'First = 0
+               and then Signature'Last >= N32 (Mod_Len) - 1
+               and then Signature'Last < N32'Last,
+        Post => Sig_Len <= Mod_Len
+                and Sig_Len <= Max_RSA_Bytes;
+
 end SPARKTLSCrypto.RSA;

@@ -160,36 +160,30 @@ is
 
    --  Constant-time Point_Add. Always runs the full Jacobian
    --  addition formula, then uses bit-mask selection to handle the
-   --  special cases (P1 = O or P2 = O). The previous version
-   --  early-returned on those conditions, which ctgrind correctly
-   --  flagged as a secret-dependent branch (the Z coordinates are
-   --  derived from the secret scalar via Scalar_Mul's intermediate
-   --  state).
+   --  special cases:
+   --   - P1 = O                  → result = P2
+   --   - P2 = O                  → result = P1
+   --   - P1 = -P2 (H=0, R!=0)    → result = O (point at infinity)
+   --   - P1 =  P2 (H=0, R==0)    → result = 2*P1 (point doubling)
+   --   - otherwise               → regular Jacobian add
    --
-   --  NOTE: the H = 0 case (P1 = ±P2, requiring point doubling or
-   --  identity) is NOT handled here — for the Montgomery ladder
-   --  invariants used by Scalar_Mul (R1 = R0 + P, with R0 ≠ ±R1
-   --  always), H = 0 cannot occur. If Point_Add is ever used
-   --  outside that specific ladder context this formula will give
-   --  wrong results when P1 = ±P2.
-   --  Constant-time Point_Add. Always runs the full Jacobian
-   --  addition formula, then uses bit-mask selection to handle the
-   --  special cases (P1 = O or P2 = O). The previous version
-   --  early-returned on those conditions, which ctgrind correctly
-   --  flagged as a secret-dependent branch (the Z coordinates are
-   --  derived from the secret scalar via Scalar_Mul's intermediate
-   --  state).
-   --
-   --  NOTE: the H = 0 case (P1 = ±P2, requiring point doubling or
-   --  identity) is NOT handled here — for the Montgomery ladder
-   --  invariants used by Scalar_Mul (R1 = R0 + P, with R0 ≠ ±R1
-   --  always), H = 0 cannot occur. If Point_Add is ever used
-   --  outside that specific ladder context this formula will give
-   --  wrong results when P1 = ±P2.
+   --  The previous version handled only the P1/P2 = O cases and
+   --  documented "H = 0 cannot occur in the Montgomery ladder".
+   --  That's true for Scalar_Mul, but Point_Add is also used by
+   --  ECDSA Verify (P = u1*G + u2*Q can have u1*G == ±u2*Q —
+   --  Wycheproof tcId=453 "point duplication"). The fix runs both
+   --  the regular add and a point-double unconditionally, then
+   --  CT-selects across all five cases. Doubling adds ~6 field
+   --  squarings; constant overhead on a path that already does
+   --  ~12 squarings, so the perf impact is small.
    procedure Point_Add (P1 : in out Jacobian; P2 : Jacobian) is
       Z1SQ, Z2SQ, U1, U2, S1, S2, H, I_V, J, R_V, V, T1, Tmp : Big_Nat;
       Reg_X, Reg_Y, Reg_Z : Big_Nat;
+      Dbl                 : Jacobian;
+      Zero_FE             : Big_Nat;
       M_P1_O, M_P2_O      : Word;
+      M_H_Zero, M_R_Zero  : Word;
+      M_Dbl, M_Inf        : Word;
    begin
       M_P1_O := FE_Zero_Mask (P1.Z);
       M_P2_O := FE_Zero_Mask (P2.Z);
@@ -208,6 +202,13 @@ is
 
       FE_Sub (H, U2, U1);
       FE_Sub (R_V, S2, S1);
+
+      --  Save zero-detection of the un-doubled H and R BEFORE we
+      --  scale them into I_V / 2*R_V below (the scaling preserves
+      --  zero-ness modulo p but doing it here is cheaper and
+      --  clearer).
+      M_H_Zero := FE_Zero_Mask (H);
+      M_R_Zero := FE_Zero_Mask (R_V);
 
       FE_Add (I_V, H, H);
       FE_Sqr (Tmp, I_V);
@@ -240,14 +241,50 @@ is
       FE_Sub (Tmp, T1, Z2SQ); T1 := Tmp;
       FE_Mul (Reg_Z, T1, H);
 
-      --  Three-way CT select. Apply P2-is-infinity first (keep P1
-      --  unchanged in that case), then P1-is-infinity (use P2).
+      --  Run point doubling of P1 unconditionally so the CT-select
+      --  below has a Dbl_* slot to pick from on the H=0, R=0 case.
+      Dbl := P1;
+      Point_Double (Dbl);
+
+      --  Encode the two H=0 sub-cases:
+      --    M_Dbl =  H=0  ∧  R=0  →  P1 = P2  →  result := Dbl
+      --    M_Inf =  H=0  ∧  R≠0  →  P1 =-P2  →  result := O
+      M_Dbl := M_H_Zero and M_R_Zero;
+      M_Inf := M_H_Zero and (not M_R_Zero);
+
+      --  Zero field element (point-at-infinity sentinel: Z = 0).
+      --  CT_Select_FE unconditionally sets Dst.Len := A.Len, so
+      --  Zero_FE.Len MUST match the rest of the field — using Len=1
+      --  here would silently truncate Reg_X to a 1-word value on
+      --  every call regardless of the mask, breaking the W384
+      --  invariant for every subsequent FE op (and giving wrong
+      --  Verify results on every valid signature).
+      Zero_FE.Len := W384;
+      Zero_FE.W   := (others => 0);
+
+      --  Five-way CT chain, applied in order so the LAST matching
+      --  case wins:
+      --    1. Reg (default)
+      --    2. M_Dbl   → Dbl       (P1 == P2)
+      --    3. M_Inf   → O (zero)  (P1 == -P2)
+      --    4. M_P2_O  → P1        (P2 is identity)
+      --    5. M_P1_O  → P2        (P1 is identity)
       --
-      --  Step A: result := (M_P2_O ? P1 : Reg)
+      --  Step 2: result := (M_Dbl ? Dbl : Reg)
+      CT_Select_FE (Tmp, M_Dbl, Dbl.X, Reg_X); Reg_X := Tmp;
+      CT_Select_FE (Tmp, M_Dbl, Dbl.Y, Reg_Y); Reg_Y := Tmp;
+      CT_Select_FE (Tmp, M_Dbl, Dbl.Z, Reg_Z); Reg_Z := Tmp;
+      --  Step 3: result := (M_Inf ? (0,0,0) : result).
+      --  Only Z needs to be 0 for the point at infinity, but for
+      --  CT-cleanliness zero all three.
+      CT_Select_FE (Tmp, M_Inf, Zero_FE, Reg_X); Reg_X := Tmp;
+      CT_Select_FE (Tmp, M_Inf, Zero_FE, Reg_Y); Reg_Y := Tmp;
+      CT_Select_FE (Tmp, M_Inf, Zero_FE, Reg_Z); Reg_Z := Tmp;
+      --  Step 4: result := (M_P2_O ? P1 : result)
       CT_Select_FE (Tmp, M_P2_O, P1.X, Reg_X); P1.X := Tmp;
       CT_Select_FE (Tmp, M_P2_O, P1.Y, Reg_Y); P1.Y := Tmp;
       CT_Select_FE (Tmp, M_P2_O, P1.Z, Reg_Z); P1.Z := Tmp;
-      --  Step B: result := (M_P1_O ? P2 : result)
+      --  Step 5: result := (M_P1_O ? P2 : result)
       CT_Select_FE (Tmp, M_P1_O, P2.X, P1.X); P1.X := Tmp;
       CT_Select_FE (Tmp, M_P1_O, P2.Y, P1.Y); P1.Y := Tmp;
       CT_Select_FE (Tmp, M_P1_O, P2.Z, P1.Z); P1.Z := Tmp;
