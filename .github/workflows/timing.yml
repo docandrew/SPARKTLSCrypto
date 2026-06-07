@@ -1,0 +1,35 @@
+name: Timing
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Timing suite to run
+        required: true
+        default: ctgrind
+        type: choice
+        options:
+          - ctgrind
+          - dudect
+          - all
+
+permissions:
+  contents: read
+
+jobs:
+  timing:
+    env:
+      ALR_NON_INTERACTIVE: "1"
+      NO_COLOR: "1"
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          submodules: false
+
+      # DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/nix-installer-action@e50d5f73bfe71c2dd0aa4218de8f4afa59f8f81d
+
+      - name: Timing checks
+        run: nix develop --command bash ci/timing.sh "${{ inputs.suite }}"

@@ -1,7 +1,10 @@
 --  SPARKTLS MAC — HMAC-SHA-256 (body)
 --
 --  Derived from SPARKNaCl.MAC (R. Chapman, MIT license).
---  Uses streaming SHA-256 to avoid concatenation allocations.
+--  Uses streaming SHA-256 on SHA-NI hosts to avoid concatenation
+--  allocations; otherwise delegates to SPARKNaCl's software HMAC.
+
+with SPARKNaCl.MAC;
 
 package body SPARKTLSCrypto.MAC with
    SPARK_Mode => On
@@ -18,6 +21,11 @@ is
       Inner_Hash : Digest;
       Ctx : Context;
    begin
+      if not Has_HW_Accel then
+         SPARKNaCl.MAC.HMAC_SHA_256 (Output, M, K);
+         return;
+      end if;
+
       --  Key longer than block size: hash it first
       if K'Length > 64 then
          Hash (Key (0 .. 31), K);

@@ -5,14 +5,12 @@
 
 with Interfaces;              use Interfaces;
 with System.Machine_Code;     use System.Machine_Code;
-with SPARKNaCl.Hashing.SHA256;
-
 package body SPARKTLSCrypto.Hashing.SHA256 with
    SPARK_Mode => Off  --  Machine_Code requires SPARK_Mode Off
 is
-   --================================================================
+   ----------------------------------------------------------------------------
    --  CPUID detection (cached at elaboration)
-   --================================================================
+   ----------------------------------------------------------------------------
 
    function Detect_SHA_NI return Boolean is
       EAX, EBX, ECX, EDX : Unsigned_32;
@@ -41,11 +39,11 @@ is
    SHA_NI_Available : constant Boolean := Detect_SHA_NI;
    function Has_HW_Accel return Boolean is (SHA_NI_Available);
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  SHA-NI block processing
    --  Translates Jeffrey Walton's sha256-x86.c (public domain)
    --  State is uint32[8] in standard H0..H7 order.
-   --================================================================
+   ----------------------------------------------------------------------------
 
    --  State_Array defined in private part of spec
 
@@ -77,7 +75,7 @@ is
       14 => (16#78A5636F748F82EE#, 16#8CC7020884C87814#),
       15 => (16#A4506CEB90BEFFFA#, 16#C67178F2BEF9A3F7#));
 
-   procedure Process_Block (S : in out State_Array; Data : System.Address) is
+   procedure Process_Block_HW (S : in out State_Array; Data : System.Address) is
    begin
       --  Faithful translation of sha256-x86.c using inline asm.
       --  Register usage:
@@ -265,15 +263,144 @@ is
                      System.Address'Asm_Input ("r", K (K'First)'Address)),    -- %3
         Clobber  => "xmm0,xmm1,xmm2,xmm3,xmm4,xmm5,xmm6,xmm7,xmm8,xmm9,memory",
         Volatile => True);
-   end Process_Block;
+   end Process_Block_HW;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Helpers
-   --================================================================
+   ----------------------------------------------------------------------------
 
    Init_State : constant State_Array :=
      (16#6a09e667#, 16#bb67ae85#, 16#3c6ef372#, 16#a54ff53a#,
       16#510e527f#, 16#9b05688c#, 16#1f83d9ab#, 16#5be0cd19#);
+
+   type W_Array is array (0 .. 15) of Unsigned_32;
+
+   K_256 : constant array (0 .. 63) of Unsigned_32 :=
+     (16#428a2f98#, 16#71374491#,
+      16#b5c0fbcf#, 16#e9b5dba5#,
+      16#3956c25b#, 16#59f111f1#,
+      16#923f82a4#, 16#ab1c5ed5#,
+      16#d807aa98#, 16#12835b01#,
+      16#243185be#, 16#550c7dc3#,
+      16#72be5d74#, 16#80deb1fe#,
+      16#9bdc06a7#, 16#c19bf174#,
+      16#e49b69c1#, 16#efbe4786#,
+      16#0fc19dc6#, 16#240ca1cc#,
+      16#2de92c6f#, 16#4a7484aa#,
+      16#5cb0a9dc#, 16#76f988da#,
+      16#983e5152#, 16#a831c66d#,
+      16#b00327c8#, 16#bf597fc7#,
+      16#c6e00bf3#, 16#d5a79147#,
+      16#06ca6351#, 16#14292967#,
+      16#27b70a85#, 16#2e1b2138#,
+      16#4d2c6dfc#, 16#53380d13#,
+      16#650a7354#, 16#766a0abb#,
+      16#81c2c92e#, 16#92722c85#,
+      16#a2bfe8a1#, 16#a81a664b#,
+      16#c24b8b70#, 16#c76c51a3#,
+      16#d192e819#, 16#d6990624#,
+      16#f40e3585#, 16#106aa070#,
+      16#19a4c116#, 16#1e376c08#,
+      16#2748774c#, 16#34b0bcb5#,
+      16#391c0cb3#, 16#4ed8aa4a#,
+      16#5b9cca4f#, 16#682e6ff3#,
+      16#748f82ee#, 16#78a5636f#,
+      16#84c87814#, 16#8cc70208#,
+      16#90befffa#, 16#a4506ceb#,
+      16#bef9a3f7#, 16#c67178f2#);
+
+   function Ch (X, Y, Z : Unsigned_32) return Unsigned_32 is
+     ((X and Y) xor ((not X) and Z));
+
+   function Maj (X, Y, Z : Unsigned_32) return Unsigned_32 is
+     ((X and Y) xor (X and Z) xor (Y and Z));
+
+   function Sigma0 (X : Unsigned_32) return Unsigned_32 is
+     (Rotate_Right (X, 2) xor
+      Rotate_Right (X, 13) xor
+      Rotate_Right (X, 22));
+
+   function Sigma1 (X : Unsigned_32) return Unsigned_32 is
+     (Rotate_Right (X, 6) xor
+      Rotate_Right (X, 11) xor
+      Rotate_Right (X, 25));
+
+   function Small_Sigma0 (X : Unsigned_32) return Unsigned_32 is
+     (Rotate_Right (X, 7) xor
+      Rotate_Right (X, 18) xor
+      Shift_Right (X, 3));
+
+   function Small_Sigma1 (X : Unsigned_32) return Unsigned_32 is
+     (Rotate_Right (X, 17) xor
+      Rotate_Right (X, 19) xor
+      Shift_Right (X, 10));
+
+   function Load_BE32 (Data : Byte_Seq; Pos : N32) return Unsigned_32 is
+     (Shift_Left (Unsigned_32 (Data (Pos)), 24) or
+      Shift_Left (Unsigned_32 (Data (Pos + 1)), 16) or
+      Shift_Left (Unsigned_32 (Data (Pos + 2)), 8) or
+      Unsigned_32 (Data (Pos + 3)));
+
+   procedure Process_Block_SW
+     (S    : in out State_Array;
+      Data : Byte_Seq;
+      Pos  : N32)
+   is
+      A : Unsigned_32 := S (0);
+      B : Unsigned_32 := S (1);
+      C : Unsigned_32 := S (2);
+      D : Unsigned_32 := S (3);
+      E : Unsigned_32 := S (4);
+      F : Unsigned_32 := S (5);
+      G : Unsigned_32 := S (6);
+      H : Unsigned_32 := S (7);
+      T1 : Unsigned_32;
+      T2 : Unsigned_32;
+      W  : W_Array;
+   begin
+      for I in 0 .. 15 loop
+         W (I) := Load_BE32 (Data, Pos + N32 (I * 4));
+      end loop;
+
+      for I in 0 .. 63 loop
+         if I >= 16 then
+            W (I mod 16) :=
+              Small_Sigma1 (W ((I - 2) mod 16)) +
+              W ((I - 7) mod 16) +
+              Small_Sigma0 (W ((I - 15) mod 16)) +
+              W (I mod 16);
+         end if;
+
+         T1 := H + Sigma1 (E) + Ch (E, F, G) + K_256 (I) + W (I mod 16);
+         T2 := Sigma0 (A) + Maj (A, B, C);
+         H := G;
+         G := F;
+         F := E;
+         E := D + T1;
+         D := C;
+         C := B;
+         B := A;
+         A := T1 + T2;
+      end loop;
+
+      S (0) := S (0) + A;
+      S (1) := S (1) + B;
+      S (2) := S (2) + C;
+      S (3) := S (3) + D;
+      S (4) := S (4) + E;
+      S (5) := S (5) + F;
+      S (6) := S (6) + G;
+      S (7) := S (7) + H;
+   end Process_Block_SW;
+
+   procedure Process_Block (S : in out State_Array; Data : Byte_Seq; Pos : N32) is
+   begin
+      if SHA_NI_Available then
+         Process_Block_HW (S, Data (Pos)'Address);
+      else
+         Process_Block_SW (S, Data, Pos);
+      end if;
+   end Process_Block;
 
    procedure State_To_Digest (Output : out Digest; S : State_Array) is
    begin
@@ -285,9 +412,9 @@ is
       end loop;
    end State_To_Digest;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Streaming (incremental) interface
-   --================================================================
+   ----------------------------------------------------------------------------
 
    procedure Init (Ctx : out Context) is
    begin
@@ -319,7 +446,7 @@ is
          end if;
          Ctx.Buffer (Ctx.Buf_Len .. 63) :=
            Data (Pos .. Pos + Space - 1);
-         Process_Block (Ctx.State, Ctx.Buffer (0)'Address);
+         Process_Block (Ctx.State, Ctx.Buffer, 0);
          Pos := Pos + Space;
          Remaining := Remaining - Space;
          Ctx.Buf_Len := 0;
@@ -327,7 +454,7 @@ is
 
       --  Process full blocks directly
       while Remaining >= 64 loop
-         Process_Block (Ctx.State, Data (Pos)'Address);
+         Process_Block (Ctx.State, Data, Pos);
          Pos := Pos + 64;
          Remaining := Remaining - 64;
       end loop;
@@ -353,7 +480,7 @@ is
          for I in Ctx.Buf_Len .. 63 loop
             Ctx.Buffer (I) := 0;
          end loop;
-         Process_Block (Ctx.State, Ctx.Buffer (0)'Address);
+         Process_Block (Ctx.State, Ctx.Buffer, 0);
          Ctx.Buf_Len := 0;
       end if;
 
@@ -368,13 +495,13 @@ is
            Byte (Shift_Right (Bit_Len, (7 - I) * 8) and 16#FF#);
       end loop;
 
-      Process_Block (Ctx.State, Ctx.Buffer (0)'Address);
+      Process_Block (Ctx.State, Ctx.Buffer, 0);
       State_To_Digest (Output, Ctx.State);
    end Final;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  One-shot interface (built on streaming)
-   --================================================================
+   ----------------------------------------------------------------------------
 
    procedure Hash (Output : out Digest; M : in Byte_Seq) is
       Ctx : Context;

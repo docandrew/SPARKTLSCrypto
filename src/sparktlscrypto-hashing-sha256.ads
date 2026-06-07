@@ -1,8 +1,8 @@
 --  SPARKTLS SHA-256 — Hardware-accelerated when available
 --
---  Uses SHA-NI instructions (x86) when detected at elaboration,
---  falls back to SPARKNaCl's software implementation otherwise.
---  Provides one-shot and streaming (incremental) interfaces.
+--  Uses SHA-NI instructions (x86) when detected at elaboration.
+--  Streaming and one-shot software hashing fall back to a SPARKNaCl-derived
+--  block implementation when SHA-NI is unavailable.
 --
 --  API mirrors SPARKNaCl.Hashing.SHA256 for drop-in replacement.
 

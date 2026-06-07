@@ -17,12 +17,27 @@ package body SPARKTLSCrypto.ChaCha20_AVX512 with
    SPARK_Mode => Off
 is
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  CPUID detection: AVX-512F (CPUID.7.0.EBX[16]) plus OS state-save
    --  enablement via XCR0 — without it AVX-512 instructions #UD.
-   --================================================================
+   ----------------------------------------------------------------------------
    function Detect_AVX512F return Boolean is
    begin
+      declare
+         EAX, EBX, ECX, EDX : Unsigned_32;
+      begin
+         Asm ("cpuid",
+              Outputs  => (Unsigned_32'Asm_Output ("=a", EAX),
+                           Unsigned_32'Asm_Output ("=b", EBX),
+                           Unsigned_32'Asm_Output ("=c", ECX),
+                           Unsigned_32'Asm_Output ("=d", EDX)),
+              Inputs   => (Unsigned_32'Asm_Input ("a", 0),
+                           Unsigned_32'Asm_Input ("c", 0)),
+              Volatile => True);
+         pragma Unreferenced (EBX, ECX, EDX);
+         if EAX < 7 then return False; end if;
+      end;
+
       declare
          EAX, EBX, ECX, EDX : Unsigned_32;
       begin
@@ -64,9 +79,9 @@ is
       end;
    end Detect_AVX512F;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Constants — 64-byte aligned for vmovdqa64.
-   --================================================================
+   ----------------------------------------------------------------------------
    Sigma0_BC : constant array (0 .. 15) of Unsigned_32 :=
                   (others => 16#61707865#);
    Sigma1_BC : constant array (0 .. 15) of Unsigned_32 :=
@@ -84,10 +99,10 @@ is
    for Sigma3_BC'Alignment       use 64;
    for Counter_Offsets'Alignment use 64;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Round-pair string fragment (column round + diagonal round).
    --  Used 10 times in the asm body to make 20 rounds total.
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Column round: QR(0,4,8,12), QR(1,5,9,13), QR(2,6,10,14), QR(3,7,11,15)
    --  Diagonal round: QR(0,5,10,15), QR(1,6,11,12), QR(2,7,8,13), QR(3,4,9,14)
 
@@ -203,7 +218,7 @@ is
       Round_Pair & Round_Pair & Round_Pair & Round_Pair & Round_Pair &
       Round_Pair & Round_Pair & Round_Pair & Round_Pair & Round_Pair;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  16×16 u32 transpose (lane-major zmm0..zmm15 → stream-major
    --  zmm0..zmm15, scratch zmm16..zmm31). Standard 4-stage AVX-512
    --  pattern: 16 vpunpckldq+hdq, 16 vpunpcklqdq+hqdq, 32 vshufi32x4.
@@ -211,7 +226,7 @@ is
    --  Indexing convention: input zmm_w holds state word w broadcast
    --  across 16 streams (zmm_w[s] = state[w][s]). Output zmm_s holds
    --  all 16 state words of stream s (zmm_s[w] = state[w][s]).
-   --================================================================
+   ----------------------------------------------------------------------------
    Transpose_16x16 : constant String :=
         --  Stage 1: vpunpckldq/hdq pair adjacent zmms → zmm16..zmm31.
         "vpunpckldq  %%zmm1,  %%zmm0,  %%zmm16"  & ASCII.LF & ASCII.HT &

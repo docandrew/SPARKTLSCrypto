@@ -1,0 +1,10 @@
+name = "sparktlscrypto_smoke"
+version = "0.0.0"
+description = "Smoke and known-answer tests for SPARKTLSCrypto"
+project-files = ["smoke.gpr"]
+
+[[depends-on]]
+sparktlscrypto = "*"
+
+[[pins]]
+sparktlscrypto = { path = "../.." }

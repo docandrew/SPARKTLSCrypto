@@ -39,9 +39,9 @@ is
       Input      : in     Bytes_16;
       Round_Keys : in     SPARKNaCl.AES.AES256_Round_Keys);
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Pre-byteswapped round-key fast paths
-   --================================================================
+   ----------------------------------------------------------------------------
    --  SPARKNaCl stores AES round keys as U32 packed via Big_Endian_Pack
    --  — the byte order in memory is the reverse of what AES-NI's
    --  AESENC/AESENCLAST consume natively. The Cipher_128 / Cipher_256
@@ -76,9 +76,9 @@ is
       Input      : in     Bytes_16;
       Pre_RK     : in     Pre_Swapped_RKs_256);
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  4-way pipelined block encrypt
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Encrypts 4 independent 16-byte blocks in parallel. AESENC has
    --  ~4-cycle latency but 1-cycle reciprocal throughput; running 4
    --  independent state chains keeps the AES unit fully fed and cuts
@@ -97,9 +97,9 @@ is
       Input  : in     Bytes_64;
       Pre_RK : in     Pre_Swapped_RKs_256);
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Fused 4-block CTR-mode encrypt: keystream + XOR in one asm.
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Computes Buf[0..63] ^= AES_E(Counter[0..63], Pre_RK), then
    --  stores back to Buf in place. Eliminates the round-trip through
    --  a 64-byte keystream buffer and the Ada-level XOR loop.
@@ -118,9 +118,9 @@ is
       Pre_RK  : in     Pre_Swapped_RKs_256)
    with Pre => Buf'Length = 64;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Fully fused AES-GCM stripe (Step 4)
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Encrypts 4 plaintext blocks with CTR, stores ciphertext in
    --  place, AND aggregated-GHASHes the ciphertext into S — all in
    --  one asm block. Saves the cache round-trip between encrypt and
@@ -148,9 +148,9 @@ is
       H_Powers : in     Pre_H_Powers)
    with Pre => Buf'Length = 64;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  2-stripe pipelined AEAD (Step 6)
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Encrypts 4 new plaintext blocks (current stripe) AND aggregated-
    --  GHASHes 4 already-encrypted ciphertext blocks (previous stripe)
    --  in one asm block. AES (port 0) and PCLMULQDQ (port 5) execute
@@ -186,9 +186,9 @@ is
       H_Powers  : in     Pre_H_Powers)
    with Pre => Buf'Length = 128;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Vectorized 4-block counter generation
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Takes a 16-byte CTR block (NIST GCM format: IV at bytes 0..11,
    --  big-endian counter at bytes 12..15) and emits 4 consecutive CTR
    --  blocks (CB, CB+1, CB+2, CB+3) into Counter, advancing CB by 4.

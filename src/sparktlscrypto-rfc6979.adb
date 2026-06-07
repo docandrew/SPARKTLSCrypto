@@ -1,21 +1,9 @@
 --  RFC 6979 deterministic ECDSA nonce derivation. Body.
 --
---  Implements RFC 6979 §3.2 with one practical simplification:
---  the rejection loop in step (h) is collapsed to a single
---  iteration plus a constant-time mod-N reduction. This deviates
---  from the spec letter (no second-iteration HMAC if k≥N) but is
---  observationally equivalent for P-256 and P-384 because the
---  rejection rate is 2⁻¹²⁸ — practically never. Drops a non-CT
---  loop that would otherwise complicate the analysis.
---
---  The output is in [1, q-1]:
---    * mod-N reduction guarantees [0, N-1].
---    * The K=0 case (probability 1/N ≈ 2⁻²⁵⁶) is replaced with 1
---      via a branch-free bitwise OR.
---
---  Both replacements are constant-time, so this whole module is
---  ctgrind-clean. The HMAC-SHA-X primitive itself is constant-time
---  by construction.
+--  Implements RFC 6979 §3.2 for P-256/SHA-256 and P-384/SHA-384.
+--  bits2octets(h1) uses the specified conditional subtraction, while
+--  the generated nonce candidate is compared against q and retried
+--  instead of reduced modulo q. Reducing the candidate would bias k.
 
 with Interfaces; use Interfaces;
 with SPARKTLSCrypto.MAC;
@@ -44,16 +32,13 @@ is
       16#EC#, 16#EC#, 16#19#, 16#6A#, 16#CC#, 16#C5#, 16#29#, 16#73#);
 
    ----------------------------------------------------------------
-   --  Constant-time reduce-mod-N for a 32-byte big-endian value,
-   --  followed by a constant-time substitution of 0 → 1. Operates
+   --  Constant-time reduce-mod-N for a big-endian value. Operates
    --  on data that may be secret.
    ----------------------------------------------------------------
-   procedure Reduce_And_Bias_P256 (V : in out Bytes_32) is
+   procedure Reduce_P256 (V : in out Bytes_32) is
       Diff   : Bytes_32;     --  every byte written by the loop below
       Borrow : Unsigned_16 := 0;
       Mask   : Byte;
-      Z      : Byte := 0;
-      Z_Mask : Byte;
       T      : Unsigned_16;
    begin
       --  Compute Diff = V - N (LSB-first, with borrow). All bytewise
@@ -72,22 +57,31 @@ is
       for I in Index_32 loop
          V (I) := (Diff (I) and Mask) or (V (I) and not Mask);
       end loop;
+   end Reduce_P256;
 
-      --  Bias 0 -> 1 (vanishingly rare: P(V=0) = 1/N ≈ 2⁻²⁵⁶).
-      --  Branch-free OR-reduce, then OR a 1 into the LSB if all-zero.
+   function Valid_K_P256 (V : Bytes_32) return Boolean is
+      Z      : Byte := 0;
+      Borrow : Unsigned_16 := 0;
+      T      : Unsigned_16;
+   begin
       for I in Index_32 loop
          Z := Z or V (I);
       end loop;
-      Z_Mask := -Byte (Boolean'Pos (Z = 0));
-      V (31) := V (31) or (16#01# and Z_Mask);
-   end Reduce_And_Bias_P256;
 
-   procedure Reduce_And_Bias_P384 (V : in out Bytes_48) is
+      for I in reverse Index_32 loop
+         T := Unsigned_16 (V (I))
+              - Unsigned_16 (N_P256 (I))
+              - Borrow;
+         Borrow := Shift_Right (T, 8) and 1;
+      end loop;
+
+      return Z /= 0 and Borrow = 1;
+   end Valid_K_P256;
+
+   procedure Reduce_P384 (V : in out Bytes_48) is
       Diff   : Bytes_48;     --  every byte written by the loop below
       Borrow : Unsigned_16 := 0;
       Mask   : Byte;
-      Z      : Byte := 0;
-      Z_Mask : Byte;
       T      : Unsigned_16;
    begin
       for I in reverse Index_48 loop
@@ -101,12 +95,26 @@ is
       for I in Index_48 loop
          V (I) := (Diff (I) and Mask) or (V (I) and not Mask);
       end loop;
+   end Reduce_P384;
+
+   function Valid_K_P384 (V : Bytes_48) return Boolean is
+      Z      : Byte := 0;
+      Borrow : Unsigned_16 := 0;
+      T      : Unsigned_16;
+   begin
       for I in Index_48 loop
          Z := Z or V (I);
       end loop;
-      Z_Mask := -Byte (Boolean'Pos (Z = 0));
-      V (47) := V (47) or (16#01# and Z_Mask);
-   end Reduce_And_Bias_P384;
+
+      for I in reverse Index_48 loop
+         T := Unsigned_16 (V (I))
+              - Unsigned_16 (N_P384 (I))
+              - Borrow;
+         Borrow := Shift_Right (T, 8) and 1;
+      end loop;
+
+      return Z /= 0 and Borrow = 1;
+   end Valid_K_P384;
 
    ----------------------------------------------------------------
    --  RFC 6979 §3.2 steps a-h, P-256 specialization.
@@ -126,15 +134,12 @@ is
       --  silences the medium-severity "Buf might not be initialized"
       --  check at each HMAC call site.
       Buf       : Byte_Seq (0 .. 96) := (others => 0);
+      Retry_Buf : Byte_Seq (0 .. 32) := (others => 0);
       Tmp       : SPARKTLSCrypto.Hashing.SHA256.Digest;
    begin
       --  bits2octets(H): for SHA-256 (256 bits = qlen), bits2int =
       --  H. Then mod N.
-      Reduce_And_Bias_P256 (H_Octets);
-      --  Note: Bias_P256 also forces H_octets ≠ 0; for the *hash*
-      --  this is not strictly RFC 6979 (RFC keeps 0 if h=0), but
-      --  the difference only matters for the all-zero hash case
-      --  which never occurs from SHA-256 in practice.
+      Reduce_P256 (H_Octets);
 
       --  Step 4: K = HMAC(K, V || 0x00 || D || H_octets)
       Buf (0 .. 31)  := Byte_Seq (V);
@@ -165,12 +170,26 @@ is
       V := Bytes_32 (Tmp);
 
       --  Step 8: T = HMAC(K, V) (one iteration since holen = qlen).
-      SPARKTLSCrypto.MAC.HMAC_SHA_256
-        (Output => Tmp, M => Byte_Seq (V), K => Byte_Seq (DRBG_Key));
-      K := Bytes_32 (Tmp);
+      --  The candidate is accepted only if 1 <= k < q; otherwise the
+      --  RFC 6979 retry update is applied and another candidate is drawn.
+      loop
+         SPARKTLSCrypto.MAC.HMAC_SHA_256
+           (Output => Tmp, M => Byte_Seq (V), K => Byte_Seq (DRBG_Key));
+         V := Bytes_32 (Tmp);
+         K := Bytes_32 (Tmp);
 
-      --  Reduce T mod N + bias 0→1. K now in [1, N-1].
-      Reduce_And_Bias_P256 (K);
+         exit when Valid_K_P256 (K);
+
+         Retry_Buf (0 .. 31) := Byte_Seq (V);
+         Retry_Buf (32)      := 16#00#;
+         SPARKTLSCrypto.MAC.HMAC_SHA_256
+           (Output => Tmp, M => Retry_Buf, K => Byte_Seq (DRBG_Key));
+         DRBG_Key := Bytes_32 (Tmp);
+
+         SPARKTLSCrypto.MAC.HMAC_SHA_256
+           (Output => Tmp, M => Byte_Seq (V), K => Byte_Seq (DRBG_Key));
+         V := Bytes_32 (Tmp);
+      end loop;
    end Derive_K_P256;
 
    ----------------------------------------------------------------
@@ -186,9 +205,10 @@ is
       DRBG_Key  : Bytes_48 := (others => 16#00#);
       H_Octets  : Bytes_48 := H;
       Buf       : Byte_Seq (0 .. 144) := (others => 0);
+      Retry_Buf : Byte_Seq (0 .. 48) := (others => 0);
       Tmp       : SPARKNaCl.Hashing.SHA384.Digest;
    begin
-      Reduce_And_Bias_P384 (H_Octets);
+      Reduce_P384 (H_Octets);
 
       --  Step 4
       Buf (0 .. 47)    := Byte_Seq (V);
@@ -218,12 +238,25 @@ is
         (Output => Tmp, M => Byte_Seq (V), K => Byte_Seq (DRBG_Key));
       V := Bytes_48 (Tmp);
 
-      --  Step 8: single HMAC since holen = qlen = 48.
-      SPARKTLSCrypto.HMAC384.HMAC_SHA_384
-        (Output => Tmp, M => Byte_Seq (V), K => Byte_Seq (DRBG_Key));
-      K := Bytes_48 (Tmp);
+      --  Step 8: single HMAC per candidate since holen = qlen = 48.
+      loop
+         SPARKTLSCrypto.HMAC384.HMAC_SHA_384
+           (Output => Tmp, M => Byte_Seq (V), K => Byte_Seq (DRBG_Key));
+         V := Bytes_48 (Tmp);
+         K := Bytes_48 (Tmp);
 
-      Reduce_And_Bias_P384 (K);
+         exit when Valid_K_P384 (K);
+
+         Retry_Buf (0 .. 47) := Byte_Seq (V);
+         Retry_Buf (48)      := 16#00#;
+         SPARKTLSCrypto.HMAC384.HMAC_SHA_384
+           (Output => Tmp, M => Retry_Buf, K => Byte_Seq (DRBG_Key));
+         DRBG_Key := Bytes_48 (Tmp);
+
+         SPARKTLSCrypto.HMAC384.HMAC_SHA_384
+           (Output => Tmp, M => Byte_Seq (V), K => Byte_Seq (DRBG_Key));
+         V := Bytes_48 (Tmp);
+      end loop;
    end Derive_K_P384;
 
 end SPARKTLSCrypto.RFC6979;

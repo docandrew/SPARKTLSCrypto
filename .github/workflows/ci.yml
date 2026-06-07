@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    env:
+      ALR_NON_INTERACTIVE: "1"
+      NO_COLOR: "1"
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          submodules: false
+
+      # DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/nix-installer-action@e50d5f73bfe71c2dd0aa4218de8f4afa59f8f81d
+
+      - name: Build and smoke test
+        run: nix develop --command bash ci/check.sh
+
+  ctgrind:
+    env:
+      ALR_NON_INTERACTIVE: "1"
+      NO_COLOR: "1"
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          submodules: false
+
+      # DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/nix-installer-action@e50d5f73bfe71c2dd0aa4218de8f4afa59f8f81d
+
+      - name: Constant-time ctgrind checks
+        run: nix develop --command bash ci/timing.sh ctgrind

@@ -12,12 +12,12 @@ package body SPARKTLSCrypto.GHASH_Dispatch with
    SPARK_Mode => On
 is
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Bit-by-bit reference: NIST SP 800-38D §6.3, "Algorithm 1".
    --  Loop runs 128 iterations per call; ~1000 cycles per block on
    --  x86_64.  PCLMULQDQ is ~50x faster but not always available;
    --  this stays as the fallback.
-   --================================================================
+   ----------------------------------------------------------------------------
 
    function SW_GF128_Mul (X : Bytes_16; Y : Bytes_16) return Bytes_16
    is
@@ -56,9 +56,9 @@ is
       return Z;
    end SW_GF128_Mul;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Dispatcher
-   --================================================================
+   ----------------------------------------------------------------------------
 
    function GF128_Mul (X : Bytes_16; Y : Bytes_16) return Bytes_16 is
    begin

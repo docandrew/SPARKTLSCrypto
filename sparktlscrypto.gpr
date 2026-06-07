@@ -20,7 +20,7 @@ project SPARKTLSCrypto is
    Style_Checks     : Enabled_Kind := External ("SPARKTLSCRYPTO_STYLE_CHECKS", "disabled");
    Contracts_Checks : Enabled_Kind := External ("SPARKTLSCRYPTO_CONTRACTS", "disabled");
 
-   type Build_Kind is ("debug", "optimize", "ctgrind");
+   type Build_Kind is ("debug", "optimize", "native", "ctgrind");
    Build_Mode : Build_Kind := External ("SPARKTLSCRYPTO_BUILD_MODE", "optimize");
 
    Compile_Checks_Switches := ();
@@ -59,8 +59,17 @@ project SPARKTLSCrypto is
    end case;
 
    Build_Switches := ();
+   AES_NI_Switches := ("-maes", "-mpclmul", "-mssse3");
+   AVX512_Switches := ("-mavx512f", "-mavx512dq", "-mavx512bw",
+                       "-mavx512vl", "-mavx512ifma", "-mvaes",
+                       "-mvpclmulqdq");
    case Build_Mode is
       when "optimize" =>
+         Build_Switches := ("-O3",
+                            "-gnatn",
+                            "-march=x86-64-v2",
+                            "-fno-tree-vectorize");
+      when "native" =>
          Build_Switches := ("-O3",
                             "-gnatn",
                             "-march=native",
@@ -95,6 +104,65 @@ project SPARKTLSCrypto is
         ("-gnatw.X",
          "-gnat2022",
          "-gnatQ");
+
+      --  Keep optimized/default builds on the portable x86-64-v2
+      --  baseline. The accelerated units still need instruction
+      --  feature switches so their inline asm assembles, but those
+      --  switches must not give GCC permission to emit AVX-512 in
+      --  ordinary scalar units before runtime CPUID dispatch runs.
+      for Switches ("sparktlscrypto-aes_ni.adb") use
+        Compile_Checks_Switches &
+        Build_Switches &
+        AES_NI_Switches &
+        Runtime_Checks_Switches &
+        Style_Checks_Switches &
+        Contracts_Switches &
+        ("-gnatw.X", "-gnat2022", "-gnatQ");
+
+      for Switches ("sparktlscrypto-ghash_ni.adb") use
+        Compile_Checks_Switches &
+        Build_Switches &
+        AES_NI_Switches &
+        Runtime_Checks_Switches &
+        Style_Checks_Switches &
+        Contracts_Switches &
+        ("-gnatw.X", "-gnat2022", "-gnatQ");
+
+      for Switches ("sparktlscrypto-aes_gcm_avx512.adb") use
+        Compile_Checks_Switches &
+        Build_Switches &
+        AVX512_Switches &
+        Runtime_Checks_Switches &
+        Style_Checks_Switches &
+        Contracts_Switches &
+        ("-gnatw.X", "-gnat2022", "-gnatQ");
+
+      for Switches ("sparktlscrypto-chacha20_avx512.adb") use
+        Compile_Checks_Switches &
+        Build_Switches &
+        AVX512_Switches &
+        Runtime_Checks_Switches &
+        Style_Checks_Switches &
+        Contracts_Switches &
+        ("-gnatw.X", "-gnat2022", "-gnatQ");
+
+      for Switches ("sparktlscrypto-poly1305_avx512.adb") use
+        Compile_Checks_Switches &
+        Build_Switches &
+        AVX512_Switches &
+        Runtime_Checks_Switches &
+        Style_Checks_Switches &
+        Contracts_Switches &
+        ("-gnatw.X", "-gnat2022", "-gnatQ");
+
+      for Switches ("sparktlscrypto-poly1305_avx512_ifma.adb") use
+        Compile_Checks_Switches &
+        Build_Switches &
+        AVX512_Switches &
+        Runtime_Checks_Switches &
+        Style_Checks_Switches &
+        Contracts_Switches &
+        ("-gnatw.X", "-gnat2022", "-gnatQ");
    end Compiler;
 
    package Binder is

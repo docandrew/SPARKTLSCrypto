@@ -1,0 +1,10 @@
+name = "sparktlscrypto_timing"
+version = "0.0.0"
+description = "Constant-time analysis harnesses for SPARKTLSCrypto"
+project-files = ["timing.gpr"]
+
+[[depends-on]]
+sparktlscrypto = "*"
+
+[[pins]]
+sparktlscrypto = { path = "../.." }

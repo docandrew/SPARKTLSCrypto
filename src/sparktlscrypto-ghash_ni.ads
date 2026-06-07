@@ -37,9 +37,9 @@ is
    --  highest-degree coefficients).
    function GF128_Mul (X : Bytes_16; Y : Bytes_16) return Bytes_16;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Aggregated 4-block GHASH ("Algorithm 5" from Gueron's paper)
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Per-block GHASH today is "X' = (X ^ C_i) * H mod P". For long
    --  ciphertexts we can fuse 4 multiplications into one reduction:
    --    X_4 = X_0 * H^4 ^ C1 * H^4 ^ C2 * H^3 ^ C3 * H^2 ^ C4 * H

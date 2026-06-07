@@ -39,15 +39,30 @@ is
    --  Mask for one 26-bit limb.
    M26 : constant U64 := 16#03FF_FFFF#;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  CPUID detection: returns (Has_AVX512F, Has_AVX512_IFMA).
    --  AVX-512F bit = CPUID.7.0.EBX[16]; IFMA bit = CPUID.7.0.EBX[21].
    --  Also requires OS XCR0 state-save enablement; without it the
    --  AVX-512 instructions would #UD and SIGILL the process.
-   --================================================================
+   ----------------------------------------------------------------------------
    procedure Detect_AVX512_Poly1305 (F, IFMA : out Boolean) is
    begin
       F := False; IFMA := False;
+      declare
+         EAX, EBX, ECX, EDX : Unsigned_32;
+      begin
+         Asm ("cpuid",
+              Outputs  => (Unsigned_32'Asm_Output ("=a", EAX),
+                           Unsigned_32'Asm_Output ("=b", EBX),
+                           Unsigned_32'Asm_Output ("=c", ECX),
+                           Unsigned_32'Asm_Output ("=d", EDX)),
+              Inputs   => (Unsigned_32'Asm_Input ("a", 0),
+                           Unsigned_32'Asm_Input ("c", 0)),
+              Volatile => True);
+         pragma Unreferenced (EBX, ECX, EDX);
+         if EAX < 7 then return; end if;
+      end;
+
       --  CPUID.1.ECX[27] = OSXSAVE
       declare
          EAX, EBX, ECX, EDX : Unsigned_32;
@@ -91,9 +106,9 @@ is
       end;
    end Detect_AVX512_Poly1305;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Single 5-limb multiply mod 2^130-5 (used to compute r^k).
-   --================================================================
+   ----------------------------------------------------------------------------
    procedure Mul_5limb
      (h0, h1, h2, h3, h4 : in out U64;
       r0, r1, r2, r3, r4 : in     U64)
@@ -125,9 +140,9 @@ is
       h1 := h1 + c;
    end Mul_5limb;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Extract clamped r limbs from key bytes 0..15.
-   --================================================================
+   ----------------------------------------------------------------------------
    procedure Extract_R
      (Key_Bytes : in  Bytes_32;
       r0, r1, r2, r3, r4 : out U64)
@@ -147,10 +162,10 @@ is
       r4 := Shift_Right (U64 (Le32 (12)), 8) and 16#000F_FFFF#;
    end Extract_R;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Convert one 16-byte block to 5 × 26-bit limbs (radix 2²⁶).
    --  The high "1" bit is folded into limb 4 (bit 24) by the caller.
-   --================================================================
+   ----------------------------------------------------------------------------
    procedure Block_To_Limbs
      (M     : in  Byte_Seq;
       Pos   : in  N32;
@@ -176,9 +191,9 @@ is
       l4 := Shift_Right (U64 (t3), 8) + Shift_Left (Hi_Bit, 24);
    end Block_To_Limbs;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Process one block scalar (used for tail).
-   --================================================================
+   ----------------------------------------------------------------------------
    procedure Process_Block_Scalar
      (h0, h1, h2, h3, h4 : in out U64;
       r0, r1, r2, r3, r4 : in     U64;
@@ -218,7 +233,7 @@ is
       h1 := h1 + c;
    end Process_Block_Scalar;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Process 8 blocks in parallel using AVX-512 lane-major SIMD.
    --
    --  Inputs:
@@ -228,14 +243,14 @@ is
    --    R_Powers  — 5 zmm regs of r¹..r⁸ limbs
    --                (lane 0 = r⁸_lk, lane 1 = r⁷_lk, ..., lane 7 = r¹_lk)
    --    S_Powers  — 4 zmm regs of 5*r¹..5*r⁸ limbs (l1..l4)
-   --================================================================
+   ----------------------------------------------------------------------------
 
    --  Layout: 9 zmm-aligned vectors (5 r-powers + 4 s-powers) = 576 bytes.
    --  Plus 5 zmm of message limbs per batch = 320 bytes scratch.
 
    type Lane_8 is array (0 .. 7) of U64;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Asm fragments — common scaffolding plus two interchangeable
    --  multiply phases (vpmuludq baseline vs vpmadd52luq IFMA).
    --
@@ -243,7 +258,7 @@ is
    --  to lane 0); zmm5..zmm9 hold r⁸..r¹ packed lane-major across 8
    --  lanes; zmm10..zmm13 hold s1..s4 = 5*r1..5*r4; zmm14..zmm18 hold
    --  the d0..d4 accumulators; zmm19..zmm21 are temporaries.
-   --================================================================
+   ----------------------------------------------------------------------------
    Setup_Loads : constant String :=
         --  Load 5 zmm regs of message limbs (one per limb position).
         "vmovdqu64    (%0), %%zmm0"          & ASCII.LF & ASCII.HT &
@@ -486,9 +501,9 @@ is
       end;
    end Process_8_Block_Batch;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Onetimeauth: 8-block batched bulk + scalar tail.
-   --================================================================
+   ----------------------------------------------------------------------------
 
    procedure Onetimeauth
      (Output :    out Bytes_16;

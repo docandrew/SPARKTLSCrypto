@@ -27,9 +27,9 @@ is
    --  treat reads from SPARK_Mode=>On callers as side-effect-free.
    Has_AVX512_AES_GCM : Boolean := False with Constant_After_Elaboration;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  16-block AES-128 cipher (4 zmm chains)
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Encrypts 16 consecutive 16-byte blocks (256 bytes total) using
    --  4 zmm chains × 4 blocks/zmm. Same Pre_Swapped_RKs_128 layout as
    --  the AES-NI module (key broadcast lane-by-lane).
@@ -45,9 +45,9 @@ is
       Input  : in     Bytes_256;
       Pre_RK : in     SPARKTLSCrypto.AES_NI.Pre_Swapped_RKs_256);
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  16-block counter generation (analogous to Build_Ctr_Block_4)
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Takes a 16-byte CB (NIST GCM format: IV at 0..11, BE counter
    --  at 12..15) and emits 16 consecutive CTR blocks (CB+0..CB+15)
    --  into Counter, advancing CB by 16. ~12 cycles inside zmm asm.
@@ -55,9 +55,9 @@ is
      (CB      : in out Bytes_16;
       Counter :    out Bytes_256);
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  16-block fused CTR-encrypt + XOR
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Generates 16 keystream blocks (VAES on 4 zmm chains) and XORs
    --  with Buf in place. Buf must be exactly 256 bytes.
    procedure Cipher_16x_128_VAES_XOR
@@ -72,9 +72,9 @@ is
       Pre_RK  : in     SPARKTLSCrypto.AES_NI.Pre_Swapped_RKs_256)
    with Pre => Buf'Length = 256;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  16-block aggregated GHASH on zmm (VPCLMULQDQ)
-   --================================================================
+   ----------------------------------------------------------------------------
    --  256-byte H_Powers buffer holds H^16..H^1 byte-reversed and
    --  laid out for VPCLMULQDQ-on-zmm consumption:
    --     zmm offset   0 : (H^16, H^15, H^14, H^13)

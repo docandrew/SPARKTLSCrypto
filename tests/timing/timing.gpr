@@ -1,0 +1,41 @@
+--  Project file for the SPARKTLSCrypto constant-time test harnesses.
+--  Builds C + Ada; the C side wraps Valgrind client requests.
+
+with "../../sparktlscrypto.gpr";
+
+project Timing is
+   for Create_Missing_Dirs use "True";
+   for Object_Dir use "obj";
+   for Exec_Dir use "bin";
+   for Languages use ("Ada", "C");
+   for Source_Dirs use (".");
+   for Main use ("ct_chacha20_poly1305.adb",
+                 "ct_negative_control.adb",
+                 "ct_x25519.adb",
+                 "ct_ed25519.adb",
+                 "ct_poly1305_scalar.adb",
+                 "ct_p256_ecdsa.adb",
+                 "ct_p384_ecdsa.adb",
+                 "ct_hkdf.adb",
+                 "ct_aes_gcm.adb",
+                 "ct_aead_decrypt.adb",
+                 "ct_rfc6979.adb",
+                 "ct_hmac.adb",
+                 "dudect_x25519.adb",
+                 "dudect_p256_ecdsa.adb",
+                 "dudect_p384_ecdsa.adb",
+                 "dudect_aead.adb");
+
+   package Compiler is
+      --  Keep auto-vectorization away from Valgrind-hostile AVX-512
+      --  codegen. The crypto library's ctgrind mode still enables the
+      --  explicit assembler features needed to compile the accelerated
+      --  units, while runtime CPUID dispatch under Valgrind selects the
+      --  scalar paths we want to inspect.
+      for Default_Switches ("Ada") use
+        ("-O2", "-g", "-gnatp", "-march=x86-64-v2");
+      for Default_Switches ("C") use
+        ("-O2", "-g", "-march=x86-64-v2");
+   end Compiler;
+end Timing;
+

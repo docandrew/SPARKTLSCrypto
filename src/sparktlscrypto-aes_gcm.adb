@@ -12,11 +12,11 @@ is
    --  Short alias so call sites read like AES.Cipher (...) without
    --  shadowing SPARKNaCl.AES (still used here for AES128_Key etc.).
    package HW_AES renames SPARKTLSCrypto.AES_Dispatch;
-   --================================================================
+   ----------------------------------------------------------------------------
    --  GF(2^128) multiplication for GHASH (NIST SP 800-38D)
    --  Bit-by-bit method: 128 iterations.
    --  Profiling shows GHASH is ~2% of handshake time — not a bottleneck.
-   --================================================================
+   ----------------------------------------------------------------------------
 
    --  Inline-renamed: the dispatcher picks PCLMULQDQ when available,
    --  else the bit-by-bit reference. Same semantics as the prior local
@@ -24,9 +24,9 @@ is
    function GF128_Mul (X : Bytes_16; Y : Bytes_16) return Bytes_16
       renames SPARKTLSCrypto.GHASH_Dispatch.GF128_Mul;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  GHASH
-   --================================================================
+   ----------------------------------------------------------------------------
 
    procedure XOR_Block (Dst : in out Bytes_16;
                         Src : in     Bytes_16) is
@@ -129,9 +129,9 @@ is
       CB (15) := Byte (Val and 16#FF#);
    end Increment_Counter;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  AES-CTR
-   --================================================================
+   ----------------------------------------------------------------------------
 
    procedure AES_CTR_128
      (Output  :    out Byte_Seq;
@@ -209,12 +209,12 @@ is
       end if;
    end AES_CTR_256;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  In-place AES-CTR: XOR Buf with the keystream in place. Works
    --  on any-First slice (so callers can pass `Output.Data (Pos ..
    --  Pos + Len - 1)` directly and skip the intermediate Ciphertext
    --  allocation / copy that the Output-version requires).
-   --================================================================
+   ----------------------------------------------------------------------------
 
    --  Both InPlace variants pre-byteswap the round keys ONCE up-front
    --  (one PSHUFB per round-key word, ~22 PSHUFBs total for AES-128
@@ -425,9 +425,9 @@ is
       end if;
    end GHASH_Bytes;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  GCM Encrypt / Decrypt (AES-128)
-   --================================================================
+   ----------------------------------------------------------------------------
 
    procedure Encrypt
      (C       :    out Byte_Seq;
@@ -706,9 +706,9 @@ is
       end;
    end Decrypt;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  GCM Encrypt / Decrypt (AES-256)
-   --================================================================
+   ----------------------------------------------------------------------------
 
    procedure Encrypt_256
      (C       :    out Byte_Seq;

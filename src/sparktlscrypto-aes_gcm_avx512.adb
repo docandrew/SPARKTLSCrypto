@@ -10,9 +10,9 @@ package body SPARKTLSCrypto.AES_GCM_AVX512 with
    SPARK_Mode => Off
 is
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Constants used by the 16-block counter generator
-   --================================================================
+   ----------------------------------------------------------------------------
 
    --  Per-lane PSHUFB mask: identity for bytes 0..11 (IV), reverses
    --  bytes 12..15 (BE counter -> LE for PADDD). 4 copies for zmm.
@@ -73,9 +73,9 @@ is
       15,14,13,12, 11,10,9,8, 7,6,5,4, 3,2,1,0);
    for Bswap_Mask_ZMM'Alignment use 64;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  CPUID detection (run once at elaboration)
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Required features (all in CPUID.7.0):
    --    EBX[16] = AVX512F           (basic AVX-512 foundation)
    --    ECX[9]  = VAES              (AES on ymm/zmm)
@@ -88,6 +88,23 @@ is
 
    function Detect_AVX512_AES_GCM return Boolean is
    begin
+      --  CPUID leaf 7 carries the AVX-512/VAES/VPCLMUL feature bits.
+      --  Do not query it unless the CPU reports that it exists.
+      declare
+         EAX, EBX, ECX, EDX : Unsigned_32;
+      begin
+         Asm ("cpuid",
+              Outputs  => (Unsigned_32'Asm_Output ("=a", EAX),
+                           Unsigned_32'Asm_Output ("=b", EBX),
+                           Unsigned_32'Asm_Output ("=c", ECX),
+                           Unsigned_32'Asm_Output ("=d", EDX)),
+              Inputs   => (Unsigned_32'Asm_Input ("a", 0),
+                           Unsigned_32'Asm_Input ("c", 0)),
+              Volatile => True);
+         pragma Unreferenced (EBX, ECX, EDX);
+         if EAX < 7 then return False; end if;
+      end;
+
       --  CPUID.1.ECX[27] = OSXSAVE: OS supports XGETBV/XSETBV.
       declare
          EAX, EBX, ECX, EDX : Unsigned_32;
@@ -134,9 +151,9 @@ is
       end;
    end Detect_AVX512_AES_GCM;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  16-block AES-128 cipher
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Layout:
    --    zmm0..zmm3 = state (each holds 4 blocks → 16 blocks total)
    --    zmm4       = round-key broadcast loader
@@ -228,9 +245,9 @@ is
         Volatile => True);
    end Cipher_16x_128_VAES;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  16-block AES-256 cipher (14 rounds)
-   --================================================================
+   ----------------------------------------------------------------------------
 
    procedure Cipher_16x_256_VAES
      (Output : out Bytes_256;
@@ -330,9 +347,9 @@ is
         Volatile => True);
    end Cipher_16x_256_VAES;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  16-block counter generator
-   --================================================================
+   ----------------------------------------------------------------------------
 
    procedure Build_Ctr_Block_16
      (CB      : in out Bytes_16;
@@ -383,9 +400,9 @@ is
         Volatile => True);
    end Build_Ctr_Block_16;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  16-block fused CTR-encrypt + XOR (AES-128)
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Same body as Cipher_16x_128_VAES with an extra XOR-and-store
    --  phase at the end.
 
@@ -476,9 +493,9 @@ is
         Volatile => True);
    end Cipher_16x_128_VAES_XOR;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  16-block fused CTR-encrypt + XOR (AES-256, 14 rounds)
-   --================================================================
+   ----------------------------------------------------------------------------
 
    procedure Cipher_16x_256_VAES_XOR
      (Buf     : in out Byte_Seq;
@@ -586,9 +603,9 @@ is
         Volatile => True);
    end Cipher_16x_256_VAES_XOR;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Compute_H_Powers_16: H, H², ..., H^16 in zmm-friendly layout
-   --================================================================
+   ----------------------------------------------------------------------------
    --  For 16-block aggregated GHASH we need 16 powers of H, each
    --  byte-reversed (PCLMULQDQ orientation) and arranged so a single
    --  zmm load covers (H^k, H^k-1, H^k-2, H^k-3) — these match the
@@ -621,9 +638,9 @@ is
       end loop;
    end Compute_H_Powers_16;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  16-block aggregated GHASH using VPCLMULQDQ on zmm
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Same algebra as GHASH_NI.GHASH_4_Blocks, scaled to 16 blocks
    --  using zmm registers. 4 chunks × (4 vpclmulqdq + accum) +
    --  horizontal reduce + bit-shift correction + reduction.

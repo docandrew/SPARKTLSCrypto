@@ -13,9 +13,9 @@ package body SPARKTLSCrypto.AES_NI with
    SPARK_Mode => Off
 is
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  CPUID detection (run once at elaboration)
-   --================================================================
+   ----------------------------------------------------------------------------
 
    function Detect_AES_NI return Boolean is
       EAX, EBX, ECX, EDX : Unsigned_32;
@@ -32,11 +32,11 @@ is
       return (ECX and 16#0200_0000#) /= 0;
    end Detect_AES_NI;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Round-key conversion: SPARKNaCl uses big-endian U32 packing
    --  internally; AES-NI wants raw bytes in their natural order.
    --  PSHUFB with this mask reverses each 4-byte word.
-   --================================================================
+   ----------------------------------------------------------------------------
 
    --  Mask for PSHUFB to byte-swap each 32-bit word in a 128-bit
    --  register. Bytes are reversed within each 4-byte group:
@@ -56,9 +56,9 @@ is
        7,  6,  5,  4,  3,  2, 1, 0);
    for Ghash_Bswap_Mask'Alignment use 16;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Counter-block byte-shuffle support
-   --================================================================
+   ----------------------------------------------------------------------------
    --  PSHUFB mask that reverses ONLY bytes 12..15 of the xmm register
    --  (the NIST GCM counter portion). Bytes 0..11 (IV) stay put. After
    --  applying it, the BE 32-bit counter at bytes 12..15 is laid out
@@ -83,9 +83,9 @@ is
      (0,0,0,0, 0,0,0,0, 0,0,0,0, 4,0,0,0);
    for Ctr_Inc_4'Alignment use 16;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  AES-128 block encrypt
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Round keys come in SPARKNaCl format (11 × 16 bytes, each word
    --  big-endian-packed into a U32). We byte-swap each word as we
    --  load via PSHUFB so we never touch the original storage.
@@ -163,9 +163,9 @@ is
         Volatile => True);
    end Cipher_128;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  AES-256 block encrypt — 14 rounds = 15 round keys (240 bytes)
-   --================================================================
+   ----------------------------------------------------------------------------
 
    procedure Cipher_256
      (Output     :    out Bytes_16;
@@ -250,13 +250,13 @@ is
         Volatile => True);
    end Cipher_256;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Pre-swap round keys: byte-reverse each 4-byte word so AES-NI
    --  AESENC/AESENCLAST can consume them with raw movdqu loads.
    --  Run once per session (or once per encrypt) instead of once per
    --  block — saves ~11 PSHUFBs per AES-128 block, ~15 per AES-256
    --  block.
-   --================================================================
+   ----------------------------------------------------------------------------
 
    procedure Pre_Swap_RKs_128
      (Source : in     SPARKNaCl.AES.AES128_Round_Keys;
@@ -314,10 +314,10 @@ is
         Volatile => True);
    end Pre_Swap_RKs_256;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  AES block encrypt with pre-swapped round keys.  No per-call
    --  PSHUFB; just movdqu + AESENC sequences.
-   --================================================================
+   ----------------------------------------------------------------------------
 
    procedure Cipher_128_PreSw
      (Output     :    out Bytes_16;
@@ -377,12 +377,12 @@ is
         Volatile => True);
    end Cipher_256_PreSw;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  4-way pipelined block encrypt (pre-swapped round keys).
    --  Same xmm4 broadcast trick as Cipher_*_PreSw, but with 4 state
    --  chains (xmm0..xmm3) running in parallel so the AESENC unit is
    --  saturated at 1 instr/cycle instead of stalling on dependency.
-   --================================================================
+   ----------------------------------------------------------------------------
 
    procedure Cipher_4x_128_PreSw
      (Output : out Bytes_64;
@@ -563,11 +563,11 @@ is
         Volatile => True);
    end Cipher_4x_256_PreSw;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Fused 4-block CTR encrypt: keystream + XOR in one asm.
    --  Saves the keystream temp buffer + Ada XOR loop; OOO can also
    --  start the buffer loads while the AES rounds are still running.
-   --================================================================
+   ----------------------------------------------------------------------------
 
    procedure Cipher_4x_128_PreSw_XOR
      (Buf     : in out Byte_Seq;
@@ -761,14 +761,14 @@ is
         Volatile => True);
    end Cipher_4x_256_PreSw_XOR;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Fully fused AES-GCM stripe (Step 4)
-   --================================================================
+   ----------------------------------------------------------------------------
    --  AES + XOR + aggregated 4-block GHASH for one 64-byte stripe in
    --  a single asm block. The OOO engine sees both the AES and the
    --  GHASH dependency chains in the same call and can dispatch them
    --  to different execution units (AES vs CLMUL ports).
-   --================================================================
+   ----------------------------------------------------------------------------
 
    procedure Encrypt_GCM_Stripe_4_128
      (Buf      : in out Byte_Seq;
@@ -980,9 +980,9 @@ is
         Volatile => True);
    end Encrypt_GCM_Stripe_4_128;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Same fused stripe for AES-256 (13-round AESENC).
-   --================================================================
+   ----------------------------------------------------------------------------
 
    procedure Encrypt_GCM_Stripe_4_256
      (Buf      : in out Byte_Seq;
@@ -1201,9 +1201,9 @@ is
         Volatile => True);
    end Encrypt_GCM_Stripe_4_256;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  2-stripe pipelined AEAD (Step 6)
-   --================================================================
+   ----------------------------------------------------------------------------
    --  AES rounds on the new stripe live in xmm0..xmm3. GHASH operates
    --  on the previous stripe (xmm5..xmm8 hold the byte-reversed
    --  ciphertext), accumulating into xmm9 (lo) / xmm10 (hi) / xmm11
@@ -1211,7 +1211,7 @@ is
    --  use xmm12. The two phases share no register dependencies until
    --  the very end, so OOO dispatches AES to port 0 and PCLMULQDQ to
    --  port 5 in parallel, hiding GHASH behind the AES dep chain.
-   --================================================================
+   ----------------------------------------------------------------------------
 
    procedure Encrypt_GHASH_Pipelined_4_128
      (Buf       : in out Byte_Seq;
@@ -1436,10 +1436,10 @@ is
         Volatile => True);
    end Encrypt_GHASH_Pipelined_4_128;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  AES-256 variant (14 rounds): same structure, more AES rounds
    --  to interleave with the same GHASH. Easier to hide GHASH.
-   --================================================================
+   ----------------------------------------------------------------------------
 
    procedure Encrypt_GHASH_Pipelined_4_256
      (Buf       : in out Byte_Seq;
@@ -1675,9 +1675,9 @@ is
         Volatile => True);
    end Encrypt_GHASH_Pipelined_4_256;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Vectorized 4-block counter generation
-   --================================================================
+   ----------------------------------------------------------------------------
 
    procedure Build_Ctr_Block_4
      (CB      : in out Bytes_16;

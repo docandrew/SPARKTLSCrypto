@@ -1,0 +1,28 @@
+SPARKTLSCrypto
+==============
+
+SPARKTLSCrypto is licensed under the BSD 3-Clause License. See LICENSE.
+
+Third-party attributions
+------------------------
+
+Several implementation units are ports, adaptations, or drop-in replacements
+for algorithms from other permissively licensed projects. The local source
+headers identify the affected units.
+
+BearSSL
+
+  Portions of the RSA and P-256 code are ported from BearSSL implementations
+  by Thomas Pornin. BearSSL is distributed under the MIT License.
+
+Fiat-Crypto
+
+  The Fiat P-256 and Curve25519 field arithmetic units are generated or ported
+  from Fiat-Crypto style formally verified arithmetic. The source headers
+  identify these as MIT/PLV-derived arithmetic.
+
+SPARKNaCl
+
+  Several APIs, software fallbacks, and compatibility paths depend on or adapt
+  SPARKNaCl algorithms and types. SPARKNaCl is published in Alire as
+  BSD-3-Clause and should be credited according to its upstream license files.

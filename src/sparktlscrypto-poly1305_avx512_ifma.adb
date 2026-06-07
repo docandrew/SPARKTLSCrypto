@@ -33,13 +33,28 @@ is
    --  44-bit limb mask.
    M44 : constant U64 := 16#0FFF_FFFF_FFFF#;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  CPUID detection: AVX-512F (EBX[16]) + AVX-512_IFMA (EBX[21]),
    --  plus XCR0 OS state-save enablement (XMM/YMM/Opmask/ZMM bits).
-   --================================================================
+   ----------------------------------------------------------------------------
    function Detect_AVX512_IFMA return Boolean is
       Mask : constant Unsigned_32 := 16#0001_0000# or 16#0020_0000#;
    begin
+      declare
+         EAX, EBX, ECX, EDX : Unsigned_32;
+      begin
+         Asm ("cpuid",
+              Outputs  => (Unsigned_32'Asm_Output ("=a", EAX),
+                           Unsigned_32'Asm_Output ("=b", EBX),
+                           Unsigned_32'Asm_Output ("=c", ECX),
+                           Unsigned_32'Asm_Output ("=d", EDX)),
+              Inputs   => (Unsigned_32'Asm_Input ("a", 0),
+                           Unsigned_32'Asm_Input ("c", 0)),
+              Volatile => True);
+         pragma Unreferenced (EBX, ECX, EDX);
+         if EAX < 7 then return False; end if;
+      end;
+
       declare
          EAX, EBX, ECX, EDX : Unsigned_32;
       begin
@@ -81,9 +96,9 @@ is
       end;
    end Detect_AVX512_IFMA;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Extract clamped r in 3 × 44-bit limbs from 16 key bytes.
-   --================================================================
+   ----------------------------------------------------------------------------
    procedure Extract_R_44
      (Key_Bytes : in  Bytes_32;
       r0, r1, r2 : out U64)
@@ -121,10 +136,10 @@ is
            or Shift_Left (U64 (t3), 8);
    end Extract_R_44;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Convert one 16-byte block to 3 × 44-bit limbs (radix 2⁴⁴),
    --  with the high "1" bit at position 128 baked into limb 2 (bit 40).
-   --================================================================
+   ----------------------------------------------------------------------------
    procedure Block_To_Limbs_44
      (M     : in  Byte_Seq;
       Pos   : in  N32;
@@ -151,11 +166,11 @@ is
            or Shift_Left (Hi_Bit, 40);
    end Block_To_Limbs_44;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Scalar 3-limb multiply mod 2¹³⁰−5 (radix 2⁴⁴), using U128 for
    --  the partial products. Used for r-power generation and the tail
    --  block scalar fallback. Not perf-critical.
-   --================================================================
+   ----------------------------------------------------------------------------
    procedure Mul_3limb_44
      (h0, h1, h2 : in out U64;
       r0, r1, r2 : in     U64)
@@ -208,10 +223,10 @@ is
       end;
    end Mul_3limb_44;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Process one block scalar (used for tail). Adds (block + Hi_Bit·2¹²⁸)
    --  to h, then multiplies by r mod p.
-   --================================================================
+   ----------------------------------------------------------------------------
    procedure Process_Block_Scalar_44
      (h0, h1, h2 : in out U64;
       r0, r1, r2 : in     U64;
@@ -228,14 +243,14 @@ is
       Mul_3limb_44 (h0, h1, h2, r0, r1, r2);
    end Process_Block_Scalar_44;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Asm-side constants for the deinterleave step.
    --  vpermt2q takes 4-bit lane indexes (low 3 = lane within source,
    --  high 1 = which source). For 8 blocks of 16 bytes loaded into
    --  two zmms, the low and high u64s of each block live at
    --  alternating lane positions; these indexes gather them into
    --  contiguous lanes.
-   --================================================================
+   ----------------------------------------------------------------------------
    Lo_Idx : constant array (0 .. 7) of U64 :=
      (0, 2, 4, 6, 8, 10, 12, 14);
    Hi_Idx : constant array (0 .. 7) of U64 :=
@@ -243,7 +258,7 @@ is
    for Lo_Idx'Alignment use 64;
    for Hi_Idx'Alignment use 64;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Asm fragments for the IFMA 8-block batch.
    --
    --  Register map (after the unpack step):
@@ -254,7 +269,7 @@ is
    --    zmm11..zmm13 d_hi[0..2] accumulators (high 52 bits per limb)
    --    zmm14        M44 mask (broadcast)
    --    zmm15..zmm17 carry temps
-   --================================================================
+   ----------------------------------------------------------------------------
 
    --  Setup that performs message unpacking inside the asm. %0 points
    --  at 128 bytes of message; %6 / %7 hold addresses of pre-built
@@ -529,9 +544,9 @@ is
       end;
    end Process_8_Block_Batch;
 
-   --================================================================
+   ----------------------------------------------------------------------------
    --  Onetimeauth: 8-block batched IFMA bulk + scalar tail.
-   --================================================================
+   ----------------------------------------------------------------------------
 
    procedure Onetimeauth
      (Output :    out Bytes_16;
