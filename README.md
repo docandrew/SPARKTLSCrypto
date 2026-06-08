@@ -55,6 +55,26 @@ The CI lane intentionally builds and checks the crate but does not run
 `gnatprove`; proof runs are currently too expensive and toolchain-sensitive
 for a default hosted CI gate.
 
+## Formal Proof
+
+Manual proof runs use the Alire-pinned GNATprove toolchain:
+
+```shell
+nix develop --command bash ci/proof.sh
+```
+
+This scopes GNATprove to the SPARKTLSCrypto source units, records the invocation
+header, and classifies dependency findings separately. GNATprove may still
+report SPARKNaCl obligations pulled in through semantic dependencies; reports
+under `src/sparktlscrypto-*` are SPARKTLSCrypto findings, while SPARKNaCl
+findings should be checked against the upstream crate's own proof expectations.
+
+To increase prover strength for this crate-local proof:
+
+```shell
+SPARKTLSCRYPTO_PROOF_LEVEL=2 nix develop --command bash ci/proof.sh
+```
+
 Optional timing checks live under `tests/timing`:
 
 ```shell

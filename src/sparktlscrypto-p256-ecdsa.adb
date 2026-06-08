@@ -12,9 +12,6 @@ is
    --  64-bit scalar types for mod-n arithmetic
    --  ================================================================
 
-   type Scalar_64 is array (0 .. 3) of Unsigned_64;
-   type Scalar_Wide is array (0 .. 7) of Unsigned_64;
-
    --  P-256 curve order n (little-endian 64-bit limbs)
    N64 : constant Scalar_64 :=
      (0 => 16#F3B9CAC2FC632551#,
@@ -37,7 +34,6 @@ is
       X  : in     ECDSA_Sig_Half;
       Y  : in     ECDSA_Sig_Half;
       OK :    out U32)
-   with Pre => A'First = 0 and then A'Length = 65
    is
    begin
       pragma Assert (X'First = 0);
@@ -79,7 +75,6 @@ is
    procedure Scalar_To_Bytes
      (Dst : out ECDSA_Sig_Half;
       Src : in  Scalar_64)
-   with Relaxed_Initialization => Dst, Post => Dst'Initialized
    is
    begin
       for L in 0 .. 3 loop

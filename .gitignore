@@ -2,6 +2,7 @@ alire/
 config/
 lib/
 obj/
+gnatprove-run.txt
 tests/smoke/bin/
 tests/smoke/obj/
 tests/timing/bin/

@@ -318,10 +318,16 @@ is
       Mask : constant Unsigned_64 := -Swap;
       T : Unsigned_64;
    begin
+      pragma Assert (Mask = 0 or else Mask = Unsigned_64'Last);
       for I in 0 .. 4 loop
+         pragma Loop_Invariant
+           (for all K in 0 .. I - 1 =>
+              A (K) <= Tight51 and B (K) <= Tight51);
          T := Mask and (A (I) xor B (I));
          A (I) := A (I) xor T;
          B (I) := B (I) xor T;
+         pragma Assert (A (I) <= Tight51);
+         pragma Assert (B (I) <= Tight51);
       end loop;
    end CSwap;
 
