@@ -32,6 +32,21 @@ is
       3 => 16#00000000FFFFFFFF#,
       4 => 16#0000000000000001#);
 
+   procedure P256_Muladd_32
+     (A  : in out Byte_Seq;
+      X  : in     ECDSA_Sig_Half;
+      Y  : in     ECDSA_Sig_Half;
+      OK :    out U32)
+   with Pre => A'First = 0 and then A'Length = 65
+   is
+   begin
+      pragma Assert (X'First = 0);
+      pragma Assert (X'Length = 32);
+      pragma Assert (Y'First = 0);
+      pragma Assert (Y'Length = 32);
+      P256_Muladd (A, Byte_Seq (X), 32, Byte_Seq (Y), 32, OK);
+   end P256_Muladd_32;
+
    ---------------------------------------------------------------
    --  Convert 32-byte big-endian to 4×64-bit LE scalar
    ---------------------------------------------------------------
@@ -69,8 +84,10 @@ is
    begin
       for L in 0 .. 3 loop
          pragma Loop_Invariant
-           (for all K in N32 range 24 - N32 (L - 1) * 8 .. 31 =>
-              Dst (K)'Initialized);
+           (if L = 0 then True
+            else
+              (for all K in N32 range 32 - N32 (L) * 8 .. 31 =>
+                 Dst (K)'Initialized));
          declare
             Base : constant N32 := N32 (24 - L * 8);
             V : constant Unsigned_64 := Src (L);
@@ -196,9 +213,7 @@ is
                end if;
             end;
          end loop;
-         if I + 5 <= 13 then
-            TM (I + 5) := TM (I + 5) + Unsigned_64 (CC);
-         end if;
+         TM (I + 5) := TM (I + 5) + Unsigned_64 (CC);
       end loop;
 
       --  Step 2: Extract quotient q = limbs 8..11 of T*mu
@@ -222,9 +237,7 @@ is
                end if;
             end;
          end loop;
-         if I + 4 <= 7 then
-            QN (I + 4) := QN (I + 4) + Unsigned_64 (CC);
-         end if;
+         QN (I + 4) := QN (I + 4) + Unsigned_64 (CC);
       end loop;
 
       --  Step 4: r = T - q*n (5 limbs, since R < 3n < 2^258)
@@ -547,8 +560,7 @@ is
       PK_Enc (1 .. 32) := Qx;
       PK_Enc (33 .. 64) := Qy;
 
-      P256_Muladd (PK_Enc, Byte_Seq (U2_Bytes), 32,
-                   Byte_Seq (U1_Bytes), 32, OK);
+      P256_Muladd_32 (PK_Enc, U2_Bytes, U1_Bytes, OK);
 
       if OK = 0 then
          return False;

@@ -235,11 +235,9 @@ is
       Remaining : N32;
       Buf_Len   : constant N32 := N32 (Buf'Length);
       Base      : constant N32 := Buf'First;
-      --  Both filled inside the `if Have_HW` branch; tell SPARK to track
-      --  init state per-element rather than demand upfront zero-fill.
       Pre_RK    : Pre_Swapped_RKs_128         with Relaxed_Initialization;
       Have_HW   : constant Boolean := SPARKTLSCrypto.AES_NI.Has_AESNI;
-      Ctr_Buf   : SPARKTLSCrypto.AES_NI.Bytes_64 with Relaxed_Initialization;
+      Ctr_Buf   : SPARKTLSCrypto.AES_NI.Bytes_64 := (others => 0);
    begin
       if Have_HW then
          Pre_Swap_RKs_128 (K, Pre_RK);
@@ -306,7 +304,7 @@ is
       Base      : constant N32 := Buf'First;
       Pre_RK    : Pre_Swapped_RKs_256         with Relaxed_Initialization;
       Have_HW   : constant Boolean := SPARKTLSCrypto.AES_NI.Has_AESNI;
-      Ctr_Buf   : SPARKTLSCrypto.AES_NI.Bytes_64 with Relaxed_Initialization;
+      Ctr_Buf   : SPARKTLSCrypto.AES_NI.Bytes_64 := (others => 0);
    begin
       if Have_HW then
          Pre_Swap_RKs_256 (K, Pre_RK);

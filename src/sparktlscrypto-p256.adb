@@ -201,6 +201,8 @@ is
 
       CC := 0;
       for I in Wide_Index range 0 .. 16 loop
+         pragma Loop_Invariant
+           (for all K in Wide_Index range 0 .. I - 1 => D (K)'Initialized);
          W := T (Integer (I)) + CC;
          D (I) := U32 (W and U64 (Limb_Mask));
          CC := Shift_Right (W, 30);
@@ -264,6 +266,8 @@ is
 
       CC := 0;
       for I in Wide_Index range 0 .. 16 loop
+         pragma Loop_Invariant
+           (for all K in Wide_Index range 0 .. I - 1 => D (K)'Initialized);
          W := T (Integer (I)) + CC;
          D (I) := U32 (W and U64 (Limb_Mask));
          CC := Shift_Right (W, 30);

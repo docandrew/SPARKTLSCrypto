@@ -89,7 +89,10 @@ is
    --  Scalar multiplication: double-and-add, MSB first
    ----------------------------------------------------------------------------
 
-   function Scalarmult (Q : Ext_Point; S : Bytes_32) return Ext_Point is
+   function Scalarmult (Q : Ext_Point; S : Bytes_32) return Ext_Point
+   with Pre  => Is_Valid (Q),
+        Post => Is_Valid (Scalarmult'Result)
+   is
       LP : Ext_Point := (X => Fiat_25519.FE_Zero,
                           Y => Fiat_25519.FE_One,
                           Z => Fiat_25519.FE_One,
@@ -99,8 +102,10 @@ is
       Swap : Unsigned_64;
    begin
       for I in reverse N32 range 0 .. 31 loop
+         pragma Loop_Invariant (Is_Valid (LP) and Is_Valid (LQ));
          CB := S (I);
          for J in reverse Natural range 0 .. 7 loop
+            pragma Loop_Invariant (Is_Valid (LP) and Is_Valid (LQ));
             Swap := Unsigned_64 (Shift_Right (CB, J) mod 2);
             Fiat_25519.CSwap (LP.X, LQ.X, Swap);
             Fiat_25519.CSwap (LP.Y, LQ.Y, Swap);
@@ -191,7 +196,11 @@ is
 
    --  Extended → Projective (drop T)
    function Ext_To_P2 (P : Ext_Point) return Proj_Point is
-     (X => P.X, Y => P.Y, Z => P.Z);
+     (X => P.X, Y => P.Y, Z => P.Z)
+   with Pre  => Is_Valid (P),
+        Post => Fiat_25519.Is_Reduced (Ext_To_P2'Result.X) and
+                Fiat_25519.Is_Reduced (Ext_To_P2'Result.Y) and
+                Fiat_25519.Is_Reduced (Ext_To_P2'Result.Z);
 
    --  Point_Double: uses P1xP1 internally, equivalent to old direct formula
    function Point_Double (P : Ext_Point) return Ext_Point
@@ -287,10 +296,14 @@ is
 
       --  Constant-time table lookup: select Base_Table(idx) or identity
       --  Always touches every table entry to avoid timing leaks.
-      function CT_Lookup (Idx : Unsigned_64) return Ext_Point is
+      function CT_Lookup (Idx : Unsigned_64) return Ext_Point
+      with Pre  => Idx <= 15,
+           Post => Is_Valid (CT_Lookup'Result)
+      is
          Result : Ext_Point := Identity;
       begin
          for K in Table_Index loop
+            pragma Loop_Invariant (Is_Valid (Result));
             --  CT equality: diff = K xor Idx. If equal, diff = 0.
             --  Collapse all bits: if any bit set, result is nonzero.
             declare
@@ -320,7 +333,10 @@ is
 
       --  Constant-time conditional point add: always does the add,
       --  then selects old or new result based on whether nibble is 0.
-      procedure CT_Add (Acc : in out Ext_Point; Nibble : Unsigned_64) is
+      procedure CT_Add (Acc : in out Ext_Point; Nibble : Unsigned_64)
+      with Pre  => Is_Valid (Acc) and Nibble <= 15,
+           Post => Is_Valid (Acc)
+      is
          T     : constant Ext_Point := CT_Lookup (Nibble);
          Sum   : constant Ext_Point := Point_Add (Acc, T);
          --  Select: if Nibble = 0, keep Acc; else use Sum
@@ -335,6 +351,17 @@ is
          Nz := Nz or Shift_Right (Nz, 1);
          M := -(Nz and 1);  --  all-ones if nonzero, 0 if zero
          for L in 0 .. 4 loop
+            pragma Loop_Invariant
+              ((for all K in 0 .. L - 1 =>
+                  Acc.X (K) <= Fiat_25519.Tight51 and
+                  Acc.Y (K) <= Fiat_25519.Tight51 and
+                  Acc.Z (K) <= Fiat_25519.Tight51 and
+                  Acc.T (K) <= Fiat_25519.Tight51) and
+               (for all K in L .. 4 =>
+                  Acc.X (K) <= Fiat_25519.Tight51 and
+                  Acc.Y (K) <= Fiat_25519.Tight51 and
+                  Acc.Z (K) <= Fiat_25519.Tight51 and
+                  Acc.T (K) <= Fiat_25519.Tight51));
             Acc.X (L) := Acc.X (L) xor (M and (Acc.X (L) xor Sum.X (L)));
             Acc.Y (L) := Acc.Y (L) xor (M and (Acc.Y (L) xor Sum.Y (L)));
             Acc.Z (L) := Acc.Z (L) xor (M and (Acc.Z (L) xor Sum.Z (L)));
@@ -348,6 +375,7 @@ is
       --  P2→P1xP1→P2→P1xP1→P2→P1xP1→P2→P1xP1→Ext for the CT_Add
       --  Saves 4 Sqr + 4 Mul per nibble vs full Point_Double.
       for I in reverse N32 range 0 .. 31 loop
+         pragma Loop_Invariant (Is_Valid (R));
          --  High nibble: 4 doublings via P2 chain (saves 4 Mul vs Point_Double)
          Nibble := Unsigned_64 (Shift_Right (S (I), 4));
          declare
@@ -420,7 +448,10 @@ is
       Store64 (R, 24, H);
    end FE_To_Bytes;
 
-   function Bytes_To_FE (S : Bytes_32) return Fiat_25519.FE is
+   function Bytes_To_FE (S : Bytes_32) return Fiat_25519.FE
+   with Post => Fiat_25519.Is_Reduced (Bytes_To_FE'Result) and
+                Fiat_25519.Is_Mul_Safe (Bytes_To_FE'Result)
+   is
       function Load64 (S : Bytes_32; Off : I32) return Unsigned_64 is
         (Unsigned_64 (S (Off)) or
          Shift_Left (Unsigned_64 (S (Off + 1)), 8) or
@@ -461,6 +492,7 @@ is
    procedure Unpackneg (R      :    out Ext_Point;
                          Valid  :    out Boolean;
                          PK     : in     Bytes_32)
+   with Post => (if Valid then Is_Valid (R))
    is
       --  Follows SPARKNaCl/TweetNaCl unpackneg exactly:
       --  R1 = y (from bytes), R2 = 1
@@ -537,12 +569,12 @@ is
    --  Arithmetic shift right by 8 / 4. Same definition + postcondition
    --  as ASR_8 / ASR_4 (private there, so reproduced here).
    function ASR_8 (X : in I64) return I64
-   is (Shift_Right_Arithmetic (X, 8))
+   is (if X >= 0 then X / 256 else ((X + 1) / 256) - 1)
      with Post => (if X >= 0 then ASR_8'Result = X / 256 else
                                   ASR_8'Result = ((X + 1) / 256) - 1);
 
    function ASR_4 (X : in I64) return I64
-   is (Shift_Right_Arithmetic (X, 4))
+   is (if X >= 0 then X / 16 else ((X + 1) / 16) - 1)
      with Post => (if X >= 0 then ASR_4'Result = X / 16 else
                                   ASR_4'Result = ((X + 1) / 16) - 1);
 
