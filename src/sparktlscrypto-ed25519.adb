@@ -569,12 +569,12 @@ is
    --  Arithmetic shift right by 8 / 4. Same definition + postcondition
    --  as ASR_8 / ASR_4 (private there, so reproduced here).
    function ASR_8 (X : in I64) return I64
-   is (if X >= 0 then X / 256 else ((X + 1) / 256) - 1)
+   is (Shift_Right_Arithmetic (X, 8))
      with Post => (if X >= 0 then ASR_8'Result = X / 256 else
                                   ASR_8'Result = ((X + 1) / 256) - 1);
 
    function ASR_4 (X : in I64) return I64
-   is (if X >= 0 then X / 16 else ((X + 1) / 16) - 1)
+   is (Shift_Right_Arithmetic (X, 4))
      with Post => (if X >= 0 then ASR_4'Result = X / 16 else
                                   ASR_4'Result = ((X + 1) / 16) - 1);
 
