@@ -32,10 +32,12 @@
               gnused
               gnumake
               valgrind
+              valgrind.dev
               which
             ];
 
             shellHook = ''
+              export C_INCLUDE_PATH="${pkgs.valgrind.dev}/include''${C_INCLUDE_PATH:+:$C_INCLUDE_PATH}"
               echo "SPARKTLSCrypto dev shell: use ci/check.sh for the reproducible CI lane."
             '';
           };
