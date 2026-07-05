@@ -13,15 +13,21 @@ if ! command -v valgrind >/dev/null 2>&1; then
 fi
 
 echo "Rebuilding library + timing harnesses in ctgrind mode..."
+build_log="$(mktemp)"
 (
   cd "$DIR" &&
-  SPARKTLSCRYPTO_BUILD_MODE=ctgrind alr -n --no-tty build >/dev/null 2>&1
+  SPARKTLSCRYPTO_BUILD_MODE=ctgrind alr -n --no-tty build >"$build_log" 2>&1
 )
 build_status=$?
 if [ "$build_status" -ne 0 ]; then
-  echo "Rebuild failed; aborting"
+  echo "Rebuild failed with status $build_status; aborting"
+  echo ""
+  echo "=== ctgrind rebuild log ==="
+  cat "$build_log"
+  rm -f "$build_log"
   exit 2
 fi
+rm -f "$build_log"
 
 run_one() {
   local name="$1" expect_errs="$2"
@@ -79,9 +85,17 @@ else
 fi
 
 echo "Restoring optimize build..."
+restore_log="$(mktemp)"
 (
   cd "$ROOT" &&
-  SPARKTLSCRYPTO_BUILD_MODE=optimize alr -n --no-tty build >/dev/null 2>&1
+  SPARKTLSCRYPTO_BUILD_MODE=optimize alr -n --no-tty build >"$restore_log" 2>&1
 )
+restore_status=$?
+if [ "$restore_status" -ne 0 ]; then
+  echo "Warning: failed to restore optimize build (status $restore_status)" >&2
+  echo "=== optimize rebuild log ===" >&2
+  cat "$restore_log" >&2
+fi
+rm -f "$restore_log"
 
 exit "$rc"
