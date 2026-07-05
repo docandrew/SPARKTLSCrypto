@@ -31,6 +31,7 @@
               gnugrep
               gnused
               gnumake
+              patchelf
               valgrind
               valgrind.dev
               which

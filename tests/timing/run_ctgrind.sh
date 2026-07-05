@@ -29,6 +29,19 @@ if [ "$build_status" -ne 0 ]; then
 fi
 rm -f "$build_log"
 
+if [ -n "${NIX_CC:-}" ] && [ -f "$NIX_CC/nix-support/dynamic-linker" ]; then
+  nix_ld="$(cat "$NIX_CC/nix-support/dynamic-linker")"
+  if ! command -v patchelf >/dev/null 2>&1; then
+    echo "patchelf not installed; aborting"
+    exit 2
+  fi
+  for exe in "$BIN"/*; do
+    if [ -x "$exe" ] && [ -f "$exe" ]; then
+      patchelf --set-interpreter "$nix_ld" "$exe"
+    fi
+  done
+fi
+
 run_one() {
   local name="$1" mode="$2"
   local exe="$BIN/$name"
