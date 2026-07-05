@@ -77,20 +77,16 @@ project SPARKTLSCrypto is
       when "debug" =>
          Build_Switches := ("-g", "-Og");
       when "ctgrind" =>
-         --  Constant-time analysis under Valgrind. Keep AVX-512
-         --  enabled at the assembler level so the explicit inline
-         --  asm in the AVX-512 modules still compiles, but disable
-         --  GCC's auto-vectorization (-fno-tree-vectorize) so scalar
-         --  Ada code doesn't end up emitting zmm-store instructions
-         --  that Valgrind 3.22 doesn't decode. Under Valgrind the
-         --  CPUID detection lies about AVX-512 anyway, so the
-         --  AVX-512 dispatches fall back to the scalar paths — and
-         --  the scalar paths are exactly what we want to vet.
+         --  Constant-time analysis under Valgrind. Keep the default
+         --  scalar units on a Valgrind-friendly baseline and disable
+         --  GCC's auto-vectorization. The explicit AVX-512 modules
+         --  still get AVX512_Switches through their per-file switches
+         --  below so their inline asm can assemble, but ordinary
+         --  scalar units must not emit EVEX/zmm instructions before
+         --  runtime CPUID dispatch runs.
          Build_Switches :=
            ("-O2", "-g",
-            "-march=x86-64-v3",
-            "-mavx512f", "-mavx512dq", "-mavx512bw",
-            "-mavx512vl", "-mavx512ifma", "-mvaes", "-mvpclmulqdq",
+            "-march=x86-64-v2",
             "-fno-tree-vectorize");
    end case;
 
