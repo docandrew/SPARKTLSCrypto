@@ -118,6 +118,7 @@ procedure Smoke_Tests is
          16#3B#, 16#17#, 16#AA#, 16#87#, 16#33#, 16#82#, 16#B0#, 16#F2#,
          16#4D#, 16#61#, 16#29#, 16#49#, 16#3D#, 16#8A#, 16#AD#, 16#60#);
       K256 : Bytes_32;
+      OK256 : Boolean;
       D384 : constant Bytes_48 :=
         (16#6B#, 16#9D#, 16#3D#, 16#AD#, 16#2E#, 16#1B#, 16#8C#, 16#1C#,
          16#05#, 16#B1#, 16#98#, 16#75#, 16#B6#, 16#65#, 16#9F#, 16#4D#,
@@ -135,12 +136,15 @@ procedure Smoke_Tests is
          16#29#, 16#07#, 16#E3#, 16#E8#, 16#3B#, 16#A9#, 16#53#, 16#68#,
          16#62#, 16#3B#, 16#8C#, 16#46#, 16#86#, 16#91#, 16#5C#, 16#F9#);
       K384 : Bytes_48;
+      OK384 : Boolean;
    begin
-      SPARKTLSCrypto.RFC6979.Derive_K_P256 (D256, H256, K256);
-      Check ("rfc6979 p-256 sha256 sample", Equal (K256, Expected_K256));
+      SPARKTLSCrypto.RFC6979.Derive_K_P256 (D256, H256, K256, OK256);
+      Check ("rfc6979 p-256 sha256 sample",
+             OK256 and then Equal (K256, Expected_K256));
 
-      SPARKTLSCrypto.RFC6979.Derive_K_P384 (D384, H384, K384);
-      Check ("rfc6979 p-384 sha384 sample", Equal (K384, Expected_K384));
+      SPARKTLSCrypto.RFC6979.Derive_K_P384 (D384, H384, K384, OK384);
+      Check ("rfc6979 p-384 sha384 sample",
+             OK384 and then Equal (K384, Expected_K384));
    end Test_RFC6979;
 
    procedure Test_AES_GCM_Roundtrip is

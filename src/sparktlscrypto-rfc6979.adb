@@ -14,6 +14,8 @@ with SPARKNaCl.Hashing.SHA384;
 package body SPARKTLSCrypto.RFC6979 with
    SPARK_Mode => On
 is
+   Max_Candidates : constant := 8;
+
 
    --  Group orders, big-endian byte form (must match the curves'
    --  ECDSA modules).
@@ -59,7 +61,13 @@ is
       end loop;
    end Reduce_P256;
 
-   function Valid_K_P256 (V : Bytes_32) return Boolean is
+   function CT_Nonzero (V : Byte) return Byte is
+      W : constant Unsigned_16 := Unsigned_16 (V);
+   begin
+      return Byte (Shift_Right (W or (0 - W), 15) and 1);
+   end CT_Nonzero;
+
+   function Valid_K_P256 (V : Bytes_32) return Byte is
       Z      : Byte := 0;
       Borrow : Unsigned_16 := 0;
       T      : Unsigned_16;
@@ -75,7 +83,7 @@ is
          Borrow := Shift_Right (T, 8) and 1;
       end loop;
 
-      return Z /= 0 and Borrow = 1;
+      return CT_Nonzero (Z) and Byte (Borrow);
    end Valid_K_P256;
 
    procedure Reduce_P384 (V : in out Bytes_48) is
@@ -97,7 +105,7 @@ is
       end loop;
    end Reduce_P384;
 
-   function Valid_K_P384 (V : Bytes_48) return Boolean is
+   function Valid_K_P384 (V : Bytes_48) return Byte is
       Z      : Byte := 0;
       Borrow : Unsigned_16 := 0;
       T      : Unsigned_16;
@@ -113,7 +121,7 @@ is
          Borrow := Shift_Right (T, 8) and 1;
       end loop;
 
-      return Z /= 0 and Borrow = 1;
+      return CT_Nonzero (Z) and Byte (Borrow);
    end Valid_K_P384;
 
    ----------------------------------------------------------------
@@ -123,7 +131,8 @@ is
    procedure Derive_K_P256
      (D :     Bytes_32;
       H :     Bytes_32;
-      K : out Bytes_32)
+      K : out Bytes_32;
+      OK : out Boolean)
    is
       V         : Bytes_32 := (others => 16#01#);
       DRBG_Key  : Bytes_32 := (others => 16#00#);
@@ -136,7 +145,14 @@ is
       Buf       : Byte_Seq (0 .. 96) := (others => 0);
       Retry_Buf : Byte_Seq (0 .. 32) := (others => 0);
       Tmp       : SPARKTLSCrypto.Hashing.SHA256.Digest;
+      Candidate : Bytes_32;
+      Have      : Byte := 0;
+      Valid     : Byte;
+      Take      : Byte;
+      Mask      : Byte;
    begin
+      K := (others => 0);
+
       --  bits2octets(H): for SHA-256 (256 bits = qlen), bits2int =
       --  H. Then mod N.
       Reduce_P256 (H_Octets);
@@ -170,15 +186,22 @@ is
       V := Bytes_32 (Tmp);
 
       --  Step 8: T = HMAC(K, V) (one iteration since holen = qlen).
-      --  The candidate is accepted only if 1 <= k < q; otherwise the
-      --  RFC 6979 retry update is applied and another candidate is drawn.
-      loop
+      --  RFC 6979 normally retries until 1 <= k < q. That retry
+      --  decision depends on secret-derived K, so run a fixed number
+      --  of candidate draws and branchlessly keep the first valid one.
+      for Attempt in 1 .. Max_Candidates loop
          SPARKTLSCrypto.MAC.HMAC_SHA_256
            (Output => Tmp, M => Byte_Seq (V), K => Byte_Seq (DRBG_Key));
          V := Bytes_32 (Tmp);
-         K := Bytes_32 (Tmp);
+         Candidate := Bytes_32 (Tmp);
 
-         exit when Valid_K_P256 (K);
+         Valid  := Valid_K_P256 (Candidate);
+         Take   := Valid and (Have xor 1);
+         Mask   := -Take;
+         for I in Index_32 loop
+            K (I) := (Candidate (I) and Mask) or (K (I) and not Mask);
+         end loop;
+         Have := Have or Valid;
 
          Retry_Buf (0 .. 31) := Byte_Seq (V);
          Retry_Buf (32)      := 16#00#;
@@ -189,7 +212,11 @@ is
          SPARKTLSCrypto.MAC.HMAC_SHA_256
            (Output => Tmp, M => Byte_Seq (V), K => Byte_Seq (DRBG_Key));
          V := Bytes_32 (Tmp);
+
+         pragma Unreferenced (Attempt);
       end loop;
+
+      OK := Have = 1;
    end Derive_K_P256;
 
    ----------------------------------------------------------------
@@ -199,7 +226,8 @@ is
    procedure Derive_K_P384
      (D :     Bytes_48;
       H :     Bytes_48;
-      K : out Bytes_48)
+      K : out Bytes_48;
+      OK : out Boolean)
    is
       V         : Bytes_48 := (others => 16#01#);
       DRBG_Key  : Bytes_48 := (others => 16#00#);
@@ -207,7 +235,14 @@ is
       Buf       : Byte_Seq (0 .. 144) := (others => 0);
       Retry_Buf : Byte_Seq (0 .. 48) := (others => 0);
       Tmp       : SPARKNaCl.Hashing.SHA384.Digest;
+      Candidate : Bytes_48;
+      Have      : Byte := 0;
+      Valid     : Byte;
+      Take      : Byte;
+      Mask      : Byte;
    begin
+      K := (others => 0);
+
       Reduce_P384 (H_Octets);
 
       --  Step 4
@@ -239,13 +274,21 @@ is
       V := Bytes_48 (Tmp);
 
       --  Step 8: single HMAC per candidate since holen = qlen = 48.
-      loop
+      --  Use fixed candidate draws and branchless first-valid
+      --  selection for the same reason as P-256 above.
+      for Attempt in 1 .. Max_Candidates loop
          SPARKTLSCrypto.HMAC384.HMAC_SHA_384
            (Output => Tmp, M => Byte_Seq (V), K => Byte_Seq (DRBG_Key));
          V := Bytes_48 (Tmp);
-         K := Bytes_48 (Tmp);
+         Candidate := Bytes_48 (Tmp);
 
-         exit when Valid_K_P384 (K);
+         Valid  := Valid_K_P384 (Candidate);
+         Take   := Valid and (Have xor 1);
+         Mask   := -Take;
+         for I in Index_48 loop
+            K (I) := (Candidate (I) and Mask) or (K (I) and not Mask);
+         end loop;
+         Have := Have or Valid;
 
          Retry_Buf (0 .. 47) := Byte_Seq (V);
          Retry_Buf (48)      := 16#00#;
@@ -256,7 +299,11 @@ is
          SPARKTLSCrypto.HMAC384.HMAC_SHA_384
            (Output => Tmp, M => Byte_Seq (V), K => Byte_Seq (DRBG_Key));
          V := Bytes_48 (Tmp);
+
+         pragma Unreferenced (Attempt);
       end loop;
+
+      OK := Have = 1;
    end Derive_K_P384;
 
 end SPARKTLSCrypto.RFC6979;

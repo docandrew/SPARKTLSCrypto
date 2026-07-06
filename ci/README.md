@@ -30,10 +30,8 @@ nix develop --command bash ci/timing.sh ctgrind
 nix develop --command bash ci/timing.sh dudect
 ```
 
-`ctgrind` runs in the default hosted CI lane on x86_64 Linux. The harness
-currently reports one explicit `XFAIL` entry, `ct_rfc6979`, which is a known
-ctgrind finding to resolve separately. Any other ctgrind finding, harness
-canary failure, Valgrind crash, or unexpected `XPASS` fails the job.
+`ctgrind` runs in the default hosted CI lane on x86_64 Linux. Any ctgrind
+finding, harness canary failure, or Valgrind crash fails the job.
 
 `dudect` is statistical and machine-sensitive, so it should not be a default
 required check.

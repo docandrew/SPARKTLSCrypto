@@ -13,8 +13,9 @@
 --    3. Reproducible signatures simplify testing and debugging.
 --
 --  This module exposes one derivation function per supported curve.
---  The output K is guaranteed in [1, q-1]; callers can pass it
---  straight to ECDSA.Sign without further validation.
+--  The output K is in [1, q-1] when OK is True; callers should abort
+--  signing when OK is False. Internally, candidate selection is
+--  bounded and branchless to avoid leaking retry decisions.
 
 with SPARKNaCl; use SPARKNaCl;
 
@@ -30,7 +31,8 @@ is
    procedure Derive_K_P256
      (D :     Bytes_32;
       H :     Bytes_32;
-      K : out Bytes_32);
+      K : out Bytes_32;
+      OK : out Boolean);
 
    --  Derive the per-signature nonce K for ECDSA-P-384.
    --    D : private key scalar (48 bytes, big-endian, in [1, n-1])
@@ -40,6 +42,7 @@ is
    procedure Derive_K_P384
      (D :     Bytes_48;
       H :     Bytes_48;
-      K : out Bytes_48);
+      K : out Bytes_48;
+      OK : out Boolean);
 
 end SPARKTLSCrypto.RFC6979;

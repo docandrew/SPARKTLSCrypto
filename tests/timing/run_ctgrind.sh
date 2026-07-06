@@ -99,7 +99,7 @@ run_one ct_p384_ecdsa        clean || fail=1
 run_one ct_hkdf              clean || fail=1
 run_one ct_aes_gcm           clean || fail=1
 run_one ct_aead_decrypt      clean || fail=1
-run_one ct_rfc6979           xfail || fail=1
+run_one ct_rfc6979           clean || fail=1
 run_one ct_hmac              clean || fail=1
 
 echo ""
