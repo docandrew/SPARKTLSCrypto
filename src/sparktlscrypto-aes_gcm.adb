@@ -423,6 +423,31 @@ is
       end if;
    end GHASH_Bytes;
 
+   procedure GHASH_Empty_Ciphertext
+     (Tag :    out Bytes_16;
+      H   : in     Bytes_16;
+      AAD : in     Byte_Seq)
+   with Pre => AAD'First = 0 and AAD'Length > 0 and AAD'Last < N32'Last
+   is
+      Y       : Bytes_16 := (others => 0);
+      Block   : Bytes_16;
+      AAD_Len : constant N32 := N32 (AAD'Length);
+      A_Bits  : constant Unsigned_64 := Unsigned_64 (AAD_Len) * 8;
+   begin
+      GHASH_Bytes (Y, H, AAD);
+
+      Block := (others => 0);
+      for I in 0 .. 7 loop
+         Block (N32 (I)) :=
+            Byte (Shift_Right (A_Bits, (7 - I) * 8) and 16#FF#);
+      end loop;
+
+      XOR_Block (Y, Block);
+      Y := GF128_Mul (Y, H);
+
+      Tag := Y;
+   end GHASH_Empty_Ciphertext;
+
    ----------------------------------------------------------------------------
    --  GCM Encrypt / Decrypt (AES-128)
    ----------------------------------------------------------------------------
@@ -704,6 +729,35 @@ is
       end;
    end Decrypt;
 
+   procedure Verify_Empty_Ciphertext
+     (Status  :    out Boolean;
+      Tag     : in     Bytes_16;
+      N       : in     Bytes_12;
+      K       : in     AES.AES128_Key;
+      AAD     : in     Byte_Seq)
+   is
+      RK  : constant AES.AES128_Round_Keys := AES.Key_Expansion (K);
+      H   : Bytes_16;
+      J0  : Bytes_16;
+      S   : Bytes_16;
+      EJ0 : Bytes_16;
+      Computed_Tag : Bytes_16;
+   begin
+      HW_AES.Cipher (H, Bytes_16'(others => 0), RK);
+
+      J0 := (others => 0);
+      J0 (0 .. 11) := N;
+      J0 (15) := 16#01#;
+
+      HW_AES.Cipher (EJ0, J0, RK);
+
+      GHASH_Empty_Ciphertext (S, H, AAD);
+      Computed_Tag := S;
+      XOR_Block (Computed_Tag, EJ0);
+
+      Status := Equal (Byte_Seq (Computed_Tag), Byte_Seq (Tag));
+   end Verify_Empty_Ciphertext;
+
    ----------------------------------------------------------------------------
    --  GCM Encrypt / Decrypt (AES-256)
    ----------------------------------------------------------------------------
@@ -946,5 +1000,34 @@ is
          Status := OK_Mask = 16#FF#;
       end;
    end Decrypt_256;
+
+   procedure Verify_Empty_Ciphertext_256
+     (Status  :    out Boolean;
+      Tag     : in     Bytes_16;
+      N       : in     Bytes_12;
+      K       : in     AES.AES256_Key;
+      AAD     : in     Byte_Seq)
+   is
+      RK  : constant AES.AES256_Round_Keys := AES.Key_Expansion (K);
+      H   : Bytes_16;
+      J0  : Bytes_16;
+      S   : Bytes_16;
+      EJ0 : Bytes_16;
+      Computed_Tag : Bytes_16;
+   begin
+      HW_AES.Cipher (H, Bytes_16'(others => 0), RK);
+
+      J0 := (others => 0);
+      J0 (0 .. 11) := N;
+      J0 (15) := 16#01#;
+
+      HW_AES.Cipher (EJ0, J0, RK);
+
+      GHASH_Empty_Ciphertext (S, H, AAD);
+      Computed_Tag := S;
+      XOR_Block (Computed_Tag, EJ0);
+
+      Status := Equal (Byte_Seq (Computed_Tag), Byte_Seq (Tag));
+   end Verify_Empty_Ciphertext_256;
 
 end SPARKTLSCrypto.AES_GCM;

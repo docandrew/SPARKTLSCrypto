@@ -13,6 +13,71 @@ is
    --  Rename Fiat_25519.FE locally so the rest of the code reads cleanly
    subtype FE is Fiat_25519.FE;
 
+   type Small_Order_Table is array (Natural range <>) of Bytes_32;
+
+   Small_Order_Points : constant Small_Order_Table :=
+     (0 =>
+        (others => 0),
+      1 =>
+        (0 => 1, others => 0),
+      2 =>
+        (16#E0#, 16#EB#, 16#7A#, 16#7C#, 16#3B#, 16#41#, 16#B8#, 16#AE#,
+         16#16#, 16#56#, 16#E3#, 16#FA#, 16#F1#, 16#9F#, 16#C4#, 16#6A#,
+         16#DA#, 16#09#, 16#8D#, 16#EB#, 16#9C#, 16#32#, 16#B1#, 16#FD#,
+         16#86#, 16#62#, 16#05#, 16#16#, 16#5F#, 16#49#, 16#B8#, 16#00#),
+      3 =>
+        (16#5F#, 16#9C#, 16#95#, 16#BC#, 16#A3#, 16#50#, 16#8C#, 16#24#,
+         16#B1#, 16#D0#, 16#B1#, 16#55#, 16#9C#, 16#83#, 16#EF#, 16#5B#,
+         16#04#, 16#44#, 16#5C#, 16#C4#, 16#58#, 16#1C#, 16#8E#, 16#86#,
+         16#D8#, 16#22#, 16#4E#, 16#DD#, 16#D0#, 16#9F#, 16#11#, 16#57#),
+      4 =>
+        (16#EC#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#,
+         16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#,
+         16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#,
+         16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#7F#),
+      5 =>
+        (16#ED#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#,
+         16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#,
+         16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#,
+         16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#7F#),
+      6 =>
+        (16#EE#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#,
+         16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#,
+         16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#,
+         16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#7F#));
+
+   function CT_Nonzero (V : Byte) return Byte is
+      W : constant Unsigned_16 := Unsigned_16 (V);
+   begin
+      return Byte (Shift_Right (W or (0 - W), 15) and 1);
+   end CT_Nonzero;
+
+   function CT_Eq_Byte (A, B : Byte) return Byte is
+   begin
+      return 1 - CT_Nonzero (A xor B);
+   end CT_Eq_Byte;
+
+   function Small_Order_Flag (P : Bytes_32) return Byte is
+      T : Bytes_32 := P;
+      Match : Byte := 0;
+   begin
+      --  RFC 7748 masks the high bit during decode. Do the same before
+      --  matching so the canonical encodings and high-bit aliases are
+      --  handled identically, without branching on the point bytes.
+      T (31) := T (31) and 16#7F#;
+      for Candidate of Small_Order_Points loop
+         declare
+            Diff : Byte := 0;
+         begin
+            for I in Index_32 loop
+               Diff := Diff or (T (I) xor Candidate (I));
+            end loop;
+            Match := Match or CT_Eq_Byte (Diff, 0);
+         end;
+      end loop;
+      return Match and 1;
+   end Small_Order_Flag;
+
    ----------------------------------------------------------------------------
    --  Encode/Decode between bytes and field elements
    ----------------------------------------------------------------------------
@@ -94,6 +159,8 @@ is
       A, AA, B, BB, CB, DA, T : FE;
       Swap : Unsigned_64 := 0;
       K_T  : Unsigned_64;
+      Small_Order : constant Byte := Small_Order_Flag (P);
+      Clear_Mask  : constant Byte := not (-Small_Order);
    begin
       E (0)  := E (0) and 248;
       E (31) := (E (31) and 127) or 64;
@@ -141,6 +208,10 @@ is
          T := Fiat_25519.Mul (X2, ZI);
       end;
       Encode (Q, T);
+
+      for I in Index_32 loop
+         Q (I) := Q (I) and Clear_Mask;
+      end loop;
    end Scalar_Mult;
 
    procedure Test_FE_Mul

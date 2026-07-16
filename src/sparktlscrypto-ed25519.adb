@@ -566,17 +566,25 @@ is
    --  L = 2^252 + 27742317777372353535851937790883648493
    ----------------------------------------------------------------------------
 
-   --  Arithmetic shift right by 8 / 4. Same definition + postcondition
-   --  as ASR_8 / ASR_4 (private there, so reproduced here).
+   --  Arithmetic shift right by 8 / 4. These compute the same floor division
+   --  semantics as Shift_Right_Arithmetic without a sign-dependent branch.
    function ASR_8 (X : in I64) return I64
-   is (Shift_Right_Arithmetic (X, 8))
-     with Post => (if X >= 0 then ASR_8'Result = X / 256 else
-                                  ASR_8'Result = ((X + 1) / 256) - 1);
+   with Post => (if X >= 0 then ASR_8'Result = X / 256 else
+                              ASR_8'Result = ((X + 1) / 256) - 1)
+   is
+      Sign : constant I64 := (if X < 0 then -1 else 0);
+   begin
+      return ((X - Sign) / 256) + Sign;
+   end ASR_8;
 
    function ASR_4 (X : in I64) return I64
-   is (Shift_Right_Arithmetic (X, 4))
-     with Post => (if X >= 0 then ASR_4'Result = X / 16 else
-                                  ASR_4'Result = ((X + 1) / 16) - 1);
+   with Post => (if X >= 0 then ASR_4'Result = X / 16 else
+                              ASR_4'Result = ((X + 1) / 16) - 1)
+   is
+      Sign : constant I64 := (if X < 0 then -1 else 0);
+   begin
+      return ((X - Sign) / 16) + Sign;
+   end ASR_4;
 
    --  ----------------------------------------------------------------
    --  ModL — scalar reduction modulo the curve order L
@@ -1276,5 +1284,10 @@ is
    begin
       return ASR_8 (X);
    end Test_ASR_8;
+
+   function Test_ASR_4 (X : I64) return I64 is
+   begin
+      return ASR_4 (X);
+   end Test_ASR_4;
 
 end SPARKTLSCrypto.Ed25519;

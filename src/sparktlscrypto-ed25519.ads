@@ -44,7 +44,8 @@ is
      (U : out Bytes_32;
       N : in  Bytes_32);
 
-   --  Test helper: expose ASR_8 for unit testing
+   --  Test helpers: expose private ASR operations for unit testing
    function Test_ASR_8 (X : I64) return I64;
+   function Test_ASR_4 (X : I64) return I64;
 
 end SPARKTLSCrypto.Ed25519;

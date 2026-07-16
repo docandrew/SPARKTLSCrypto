@@ -9,6 +9,7 @@ with SPARKNaCl.Hashing.SHA384;
 
 with SPARKTLSCrypto.AES_GCM;
 with SPARKTLSCrypto.ChaCha20_Poly1305;
+with SPARKTLSCrypto.Ed25519;
 with SPARKTLSCrypto.Hashing.SHA256;
 with SPARKTLSCrypto.HKDF;
 with SPARKTLSCrypto.MAC;
@@ -98,10 +99,58 @@ procedure Smoke_Tests is
          16#74#, 16#8B#, 16#7D#, 16#DC#, 16#B4#, 16#3E#, 16#F7#, 16#5A#,
          16#0D#, 16#BF#, 16#3A#, 16#0D#, 16#26#, 16#38#, 16#1A#, 16#F4#,
          16#EB#, 16#A4#, 16#A9#, 16#8E#, 16#AA#, 16#9B#, 16#4E#, 16#6A#);
+      type Small_Order_Table is array (Natural range <>) of Bytes_32;
+      Low_Order_Points : constant Small_Order_Table :=
+        (0 =>
+           (others => 0),
+         1 =>
+           (0 => 1, others => 0),
+         2 =>
+           (16#E0#, 16#EB#, 16#7A#, 16#7C#, 16#3B#, 16#41#, 16#B8#, 16#AE#,
+            16#16#, 16#56#, 16#E3#, 16#FA#, 16#F1#, 16#9F#, 16#C4#, 16#6A#,
+            16#DA#, 16#09#, 16#8D#, 16#EB#, 16#9C#, 16#32#, 16#B1#, 16#FD#,
+            16#86#, 16#62#, 16#05#, 16#16#, 16#5F#, 16#49#, 16#B8#, 16#00#),
+         3 =>
+           (16#5F#, 16#9C#, 16#95#, 16#BC#, 16#A3#, 16#50#, 16#8C#, 16#24#,
+            16#B1#, 16#D0#, 16#B1#, 16#55#, 16#9C#, 16#83#, 16#EF#, 16#5B#,
+            16#04#, 16#44#, 16#5C#, 16#C4#, 16#58#, 16#1C#, 16#8E#, 16#86#,
+            16#D8#, 16#22#, 16#4E#, 16#DD#, 16#D0#, 16#9F#, 16#11#, 16#57#),
+         4 =>
+           (16#EC#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#,
+            16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#,
+            16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#,
+            16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#7F#),
+         5 =>
+           (16#ED#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#,
+            16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#,
+            16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#,
+            16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#7F#),
+         6 =>
+           (16#EE#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#,
+            16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#,
+            16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#,
+            16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#7F#));
+      Zero : constant Bytes_32 := (others => 0);
       Q : Bytes_32;
    begin
       SPARKTLSCrypto.X25519.Scalar_Mult (Q, Scalar, Base);
       Check ("x25519 rfc7748 vector", Equal (Q, Expected));
+
+      for I in Low_Order_Points'Range loop
+         declare
+            High_Bit_Alias : Bytes_32 := Low_Order_Points (I);
+         begin
+            SPARKTLSCrypto.X25519.Scalar_Mult
+              (Q, Scalar, Low_Order_Points (I));
+            Check ("x25519 low-order point" & Natural'Image (I),
+                   Equal (Q, Zero));
+
+            High_Bit_Alias (31) := High_Bit_Alias (31) or 16#80#;
+            SPARKTLSCrypto.X25519.Scalar_Mult (Q, Scalar, High_Bit_Alias);
+            Check ("x25519 low-order high-bit alias" & Natural'Image (I),
+                   Equal (Q, Zero));
+         end;
+      end loop;
    end Test_X25519;
 
    procedure Test_RFC6979 is
@@ -147,6 +196,24 @@ procedure Smoke_Tests is
              OK384 and then Equal (K384, Expected_K384));
    end Test_RFC6979;
 
+   procedure Test_Ed25519_ASR is
+      use SPARKTLSCrypto.Ed25519;
+   begin
+      Check ("ed25519 asr8 zero", Test_ASR_8 (0) = 0);
+      Check ("ed25519 asr8 positive exact", Test_ASR_8 (256) = 1);
+      Check ("ed25519 asr8 positive floor", Test_ASR_8 (255) = 0);
+      Check ("ed25519 asr8 negative one", Test_ASR_8 (-1) = -1);
+      Check ("ed25519 asr8 negative exact", Test_ASR_8 (-256) = -1);
+      Check ("ed25519 asr8 negative floor", Test_ASR_8 (-257) = -2);
+
+      Check ("ed25519 asr4 zero", Test_ASR_4 (0) = 0);
+      Check ("ed25519 asr4 positive exact", Test_ASR_4 (16) = 1);
+      Check ("ed25519 asr4 positive floor", Test_ASR_4 (15) = 0);
+      Check ("ed25519 asr4 negative one", Test_ASR_4 (-1) = -1);
+      Check ("ed25519 asr4 negative exact", Test_ASR_4 (-16) = -1);
+      Check ("ed25519 asr4 negative floor", Test_ASR_4 (-17) = -2);
+   end Test_Ed25519_ASR;
+
    procedure Test_AES_GCM_Roundtrip is
       K_Raw : constant Bytes_16 := (others => 0);
       K : SPARKNaCl.AES.AES128_Key;
@@ -191,6 +258,7 @@ begin
    Test_HMAC_HKDF;
    Test_X25519;
    Test_RFC6979;
+   Test_Ed25519_ASR;
    Test_AES_GCM_Roundtrip;
    Test_ChaCha20_Poly1305_Smoke;
 

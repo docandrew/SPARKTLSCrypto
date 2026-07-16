@@ -63,6 +63,16 @@ is
                C'Last   < N32'Last and then
                AAD'Last < N32'Last;
 
+   procedure Verify_Empty_Ciphertext
+     (Status  :    out Boolean;
+      Tag     : in     Bytes_16;
+      N       : in     Bytes_12;
+      K       : in     AES.AES128_Key;
+      AAD     : in     Byte_Seq)
+   with Pre => AAD'First = 0 and then
+               AAD'Length > 0 and then
+               AAD'Last < N32'Last;
+
    ----------------------------------------------------------------------------
    --  AES-256-GCM
    ----------------------------------------------------------------------------
@@ -108,6 +118,16 @@ is
                M'Last   = C'Last and then
                M'Length  = C'Length and then
                C'Last   < N32'Last and then
+               AAD'Last < N32'Last;
+
+   procedure Verify_Empty_Ciphertext_256
+     (Status  :    out Boolean;
+      Tag     : in     Bytes_16;
+      N       : in     Bytes_12;
+      K       : in     AES.AES256_Key;
+      AAD     : in     Byte_Seq)
+   with Pre => AAD'First = 0 and then
+               AAD'Length > 0 and then
                AAD'Last < N32'Last;
 
 end SPARKTLSCrypto.AES_GCM;
