@@ -22,21 +22,23 @@ is
 
    procedure Hash (Output : out Digest;
                    M      : in  Byte_Seq)
-   with Global => null, Always_Terminates;
+   with Global => null, Always_Terminates,
+        Pre => M'First >= 0 and then M'Last < N32'Last - 256;
 
    function Hash (M : in Byte_Seq) return Digest
-   with Global => null;
+   with Global => null, Pre => M'First >= 0 and then M'Last < N32'Last - 256;
 
    type Context is private;
 
    procedure Init (Ctx : out Context)
-   with Global => null;
+   with Global => null, Always_Terminates;
 
    procedure Update (Ctx : in out Context; Data : Byte_Seq)
-   with Global => null;
+   with Global => null, Always_Terminates,
+        Pre => Data'First >= 0 and then Data'Last < N32'Last - 256;
 
    procedure Final (Ctx : in out Context; Output : out Digest)
-   with Global => null;
+   with Global => null, Always_Terminates;
 
 private
    type State_Array is array (0 .. 7) of Interfaces.Unsigned_64;
@@ -49,7 +51,7 @@ private
    type Context is record
       State   : State_Array   := Init_State;
       Buffer  : Byte_Seq (0 .. 127) := (others => 0);
-      Buf_Len : N32           := 0;
+      Buf_Len : N32 range 0 .. 127 := 0;
       Total   : Interfaces.Unsigned_64 := 0;
    end record;
 

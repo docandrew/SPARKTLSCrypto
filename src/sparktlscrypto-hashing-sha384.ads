@@ -2,6 +2,7 @@
 --  the FIPS 180-4 5.3.4 initial hash value. KATs: 8/8, see
 --  tests/unit/test_sha384_streaming_kat.adb.
 
+pragma SPARK_Mode (On);
 with SPARKTLSCrypto.Hashing.SHA512_Family_G;
 
 package SPARKTLSCrypto.Hashing.SHA384 is new

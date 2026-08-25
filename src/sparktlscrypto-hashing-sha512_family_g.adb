@@ -59,7 +59,8 @@ is
      (State : in out State_Array;
       Data  : in     Byte_Seq;
       Base  : in     N32)
-   with Pre => Data'First <= Base and then Base <= Data'Last - 127
+   with Pre => Data'Last >= 127 and then Data'First <= Base
+               and then Base <= Data'Last - 127
    is
       W : array (0 .. 79) of Unsigned_64 := (others => 0);
       A, B, C, D, E, F, G, H : Unsigned_64;
@@ -147,6 +148,10 @@ is
       end if;
 
       while Remaining >= 128 loop
+         pragma Loop_Variant (Decreases => Remaining);
+         pragma Loop_Invariant
+           (Pos >= Data'First and then Remaining >= 0
+              and then Pos + Remaining - 1 = Data'Last);
          Process_Block (Ctx.State, Data, Pos);
          Pos := Pos + 128;
          Remaining := Remaining - 128;
@@ -163,6 +168,7 @@ is
       Pad     : Byte_Seq (0 .. 127) := (others => 0);
       Pad_Len : N32;
    begin
+      Output := (others => 0);
       --  FIPS 180-4 5.1.2: append 0x80, zero-fill to 112 mod 128, then
       --  the 128-bit big-endian bit length (high half zero here).
       Pad (0) := 16#80#;
@@ -173,7 +179,8 @@ is
       end if;
 
       declare
-         Tail : Byte_Seq (0 .. Pad_Len + 15) := (others => 0);
+         Tail_Last : constant N32 := Pad_Len + 15;
+         Tail      : Byte_Seq (0 .. Tail_Last) := (others => 0);
       begin
          Tail (0 .. Pad_Len - 1) := Pad (0 .. Pad_Len - 1);
          for J in 0 .. 7 loop
@@ -183,13 +190,11 @@ is
          Update (Ctx, Tail);
       end;
 
-      pragma Assert (Ctx.Buf_Len = 0);
-
-      for I in 0 .. 7 loop
-         for J in 0 .. 7 loop
-            exit when N32 (I) * 8 + N32 (J) > Digest'Last;
-            Output (N32 (I) * 8 + N32 (J)) :=
-              Byte (Shift_Right (Ctx.State (I), 56 - 8 * J) and 16#FF#);
+      for I in N32 range 0 .. Digest_Bytes / 8 - 1 loop
+         for J in N32 range 0 .. 7 loop
+            Output (I * 8 + J) :=
+              Byte (Shift_Right (Ctx.State (Integer (I)), 56 - 8 * Integer (J))
+                    and 16#FF#);
          end loop;
       end loop;
    end Final;

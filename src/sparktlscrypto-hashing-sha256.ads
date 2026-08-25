@@ -21,10 +21,12 @@ is
 
    procedure Hash (Output : out Digest;
                    M      : in  Byte_Seq)
-   with Global => null, Always_Terminates;
+   with Global => null, Always_Terminates,
+        Pre => M'First >= 0 and then M'Last < N32'Last - 128;
 
    function Hash (M : in Byte_Seq) return Digest
-   with Global => null;
+   with Global => null,
+        Pre => M'First >= 0 and then M'Last < N32'Last - 128;
 
    --------------------------------------------------------
    --  Streaming (incremental) interface
@@ -33,13 +35,14 @@ is
    type Context is private;
 
    procedure Init (Ctx : out Context)
-   with Global => null;
+   with Global => null, Always_Terminates;
 
    procedure Update (Ctx : in out Context; Data : Byte_Seq)
-   with Global => null;
+   with Global => null, Always_Terminates,
+        Pre => Data'First >= 0 and then Data'Last < N32'Last - 128;
 
    procedure Final (Ctx : in out Context; Output : out Digest)
-   with Global => null;
+   with Global => null, Always_Terminates;
 
    --------------------------------------------------------
    --  Hardware detection
@@ -64,7 +67,7 @@ private
    type Context is record
       State    : State_Array   := Init_State;
       Buffer   : Byte_Seq (0 .. 63) := (others => 0);
-      Buf_Len  : N32           := 0;
+      Buf_Len  : N32 range 0 .. 63 := 0;
       Total    : Interfaces.Unsigned_64 := 0;
    end record;
 

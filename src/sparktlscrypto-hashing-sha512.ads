@@ -4,6 +4,7 @@
 --  Added for the TLS 1.2 CertificateVerify sha512-family signature
 --  schemes (0x0601/0x0806) under the streaming transcript.
 
+pragma SPARK_Mode (On);
 with SPARKTLSCrypto.Hashing.SHA512_Family_G;
 
 package SPARKTLSCrypto.Hashing.SHA512 is new
