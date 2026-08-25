@@ -269,10 +269,6 @@ is
    --  Helpers
    ----------------------------------------------------------------------------
 
-   Init_State : constant State_Array :=
-     (16#6a09e667#, 16#bb67ae85#, 16#3c6ef372#, 16#a54ff53a#,
-      16#510e527f#, 16#9b05688c#, 16#1f83d9ab#, 16#5be0cd19#);
-
    type W_Array is array (0 .. 15) of Unsigned_32;
 
    K_256 : constant array (0 .. 63) of Unsigned_32 :=

@@ -52,11 +52,20 @@ private
    type State_Array is array (0 .. 7) of Interfaces.Unsigned_32
    with Alignment => 16;
 
+   --  FIPS 180-4 5.3.3 initial hash value. Also the record default:
+   --  a Context object is a valid fresh hash from the moment it is
+   --  declared or allocated, so a missed Init cannot yield an
+   --  uninitialized state (found the hard way: the streamed transcript
+   --  crashed on heap residue, 2026-08-25).
+   Init_State : constant State_Array :=
+     (16#6A09E667#, 16#BB67AE85#, 16#3C6EF372#, 16#A54FF53A#,
+      16#510E527F#, 16#9B05688C#, 16#1F83D9AB#, 16#5BE0CD19#);
+
    type Context is record
-      State    : State_Array;
-      Buffer   : Byte_Seq (0 .. 63);
-      Buf_Len  : N32;
-      Total    : Interfaces.Unsigned_64;
+      State    : State_Array   := Init_State;
+      Buffer   : Byte_Seq (0 .. 63) := (others => 0);
+      Buf_Len  : N32           := 0;
+      Total    : Interfaces.Unsigned_64 := 0;
    end record;
 
 end SPARKTLSCrypto.Hashing.SHA256;
