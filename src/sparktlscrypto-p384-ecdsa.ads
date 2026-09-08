@@ -6,9 +6,7 @@ with SPARKTLSCrypto.BigNat;     use SPARKTLSCrypto.BigNat;
 with SPARKTLSCrypto.P384.Field;
 
 package SPARKTLSCrypto.P384.ECDSA with
-   SPARK_Mode        => On,
-   Initializes       => (N, N_M0I),
-   Initial_Condition => N.Len = 12
+   SPARK_Mode        => On
 is
    pragma Elaborate_Body;
    N : constant Big_Nat :=

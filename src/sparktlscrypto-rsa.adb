@@ -174,7 +174,8 @@ is
       Output  :    out Byte_Seq;
       Out_Len : in     Natural)
    with Always_Terminates,
-        Pre => Input'First = 0 and Output'First = 0
+        Pre => Input'First = 0 and Output'First = 0 and
+               Input'Last < N32'Last - 256
                and Output'Last < N32'Last
                and (Out_Len = 0 or else N32 (Out_Len) - 1 <= Output'Last)
                and Out_Len <= 64

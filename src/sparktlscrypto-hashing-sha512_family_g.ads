@@ -23,10 +23,10 @@ is
    procedure Hash (Output : out Digest;
                    M      : in  Byte_Seq)
    with Global => null, Always_Terminates,
-        Pre => M'First >= 0 and then M'Last < N32'Last - 256;
+        Pre => M'Last < N32'Last - 256;
 
    function Hash (M : in Byte_Seq) return Digest
-   with Global => null, Pre => M'First >= 0 and then M'Last < N32'Last - 256;
+   with Global => null, Pre => M'Last < N32'Last - 256;
 
    type Context is private;
 
@@ -35,7 +35,7 @@ is
 
    procedure Update (Ctx : in out Context; Data : Byte_Seq)
    with Global => null, Always_Terminates,
-        Pre => Data'First >= 0 and then Data'Last < N32'Last - 256;
+        Pre => Data'Last < N32'Last - 256;
 
    procedure Final (Ctx : in out Context; Output : out Digest)
    with Global => null, Always_Terminates;

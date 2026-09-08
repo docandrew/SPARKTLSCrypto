@@ -121,7 +121,7 @@ is
    end Init;
 
    procedure Update (Ctx : in out Context; Data : Byte_Seq) is
-      Pos       : N32 := Data'First;
+      Pos       : I32 := Data'First;
       Remaining : N32;
       Space     : N32;
    begin
