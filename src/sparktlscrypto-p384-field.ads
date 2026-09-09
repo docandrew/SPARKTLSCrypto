@@ -7,9 +7,7 @@ with SPARKNaCl;        use SPARKNaCl;
 with SPARKTLSCrypto.BigNat;  use SPARKTLSCrypto.BigNat;
 
 package SPARKTLSCrypto.P384.Field with
-   SPARK_Mode        => On,
-   Initializes       => (P, P_M0I),
-   Initial_Condition => P.Len = W384
+   SPARK_Mode => On
 is
    pragma Elaborate_Body;
    W384 : constant := 12;  --  384 bits = 12 x 32-bit words
@@ -52,14 +50,15 @@ is
       X, Y, Z : Big_Nat;
    end record;
 
-   --  Module state (initialized at package elaboration; effectively
-   --  constant for the lifetime of the program).
-   P     : Big_Nat with Constant_After_Elaboration;
-   P_M0I : Word    with Constant_After_Elaboration;
+   P : constant Big_Nat :=
+     (Len => W384,
+      W   => (16#FFFFFFFF#, 16#00000000#, 16#00000000#, 16#FFFFFFFF#,
+              16#FFFFFFFE#, 16#FFFFFFFF#, 16#FFFFFFFF#, 16#FFFFFFFF#,
+              16#FFFFFFFF#, 16#FFFFFFFF#, 16#FFFFFFFF#, 16#FFFFFFFF#,
+              others => 0));
 
-   --  Ghost predicate for cross-package propagation of the elaboration
-   --  invariant. Initial_Condition only assists analysis WITHIN the
-   --  package; clients must include this in their Pre's.
+   P_M0I : constant Word := 16#00000001#;
+
    function Initialized return Boolean is (P.Len = W384)
      with Ghost;
 

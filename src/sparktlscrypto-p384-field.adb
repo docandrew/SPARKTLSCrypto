@@ -166,16 +166,7 @@ is
    --   - P1 = -P2 (H=0, R!=0)    → result = O (point at infinity)
    --   - P1 =  P2 (H=0, R==0)    → result = 2*P1 (point doubling)
    --   - otherwise               → regular Jacobian add
-   --
-   --  The previous version handled only the P1/P2 = O cases and
-   --  documented "H = 0 cannot occur in the Montgomery ladder".
-   --  That's true for Scalar_Mul, but Point_Add is also used by
-   --  ECDSA Verify (P = u1*G + u2*Q can have u1*G == ±u2*Q —
-   --  Wycheproof tcId=453 "point duplication"). The fix runs both
-   --  the regular add and a point-double unconditionally, then
-   --  CT-selects across all five cases. Doubling adds ~6 field
-   --  squarings; constant overhead on a path that already does
-   --  ~12 squarings, so the perf impact is small.
+
    procedure Point_Add (P1 : in out Jacobian; P2 : Jacobian) is
       Z1SQ, Z2SQ, U1, U2, S1, S2, H, I_V, J, R_V, V, T1, Tmp : Big_Nat;
       Reg_X, Reg_Y, Reg_Z : Big_Nat;
@@ -327,9 +318,7 @@ is
       Zero (R0.Z, W384);
       R1 := P_Pt;
 
-      --  Constant-time Montgomery ladder. The previous `if B = 1
-      --  then ... else ... end if;` here was the line ctgrind flagged
-      --  as a per-bit secret leak.
+      --  Constant-time Montgomery ladder.
       --
       --  CT trick: always do the "B=1" operation pair (R0 += R1; R1
       --  doubled), but swap R0/R1 in/out when B=0 so the same
@@ -360,11 +349,6 @@ is
       Z_Inv, Z_Inv2, Z_Inv3, Tmp : Big_Nat;
    begin
       --  PRECONDITION: Pt.Z must be non-zero (i.e. Pt is not O).
-      --  The previous early-return on FE_Is_Zero(Pt.Z) here was a
-      --  ctgrind-flagged secret-dependent branch. With RFC 6979 K
-      --  always in [1, n-1] and Q a valid (non-O) point, K*P from
-      --  Scalar_Mul is never O, so the check was always false in
-      --  practice anyway.
       FE_Inv (Z_Inv, Pt.Z);
       FE_Sqr (Z_Inv2, Z_Inv);
       FE_Mul (Z_Inv3, Z_Inv2, Z_Inv);
@@ -407,9 +391,4 @@ is
       FE_To_Monty (Pt.Z);
    end Make_Point;
 
-begin
-   --  Initialize field constants P and P_M0I at package elaboration.
-   Decode (P, P384_P);
-   P.Len := W384;
-   P_M0I := Ninv32 (P.W (0));
 end SPARKTLSCrypto.P384.Field;

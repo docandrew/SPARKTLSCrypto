@@ -87,10 +87,9 @@ is
       return Result;
    end Gen_Auth_Msg;
 
-   procedure Encrypt
-     (C   :    out Byte_Seq;
+   procedure Encrypt_InPlace
+     (Buf : in out Byte_Seq;
       Tag :    out Bytes_16;
-      M   : in     Byte_Seq;
       N   : in     Core.ChaCha20_IETF_Nonce;
       K   : in     Core.ChaCha20_Key;
       AAD : in     Byte_Seq)
@@ -98,77 +97,68 @@ is
       OTK_Bytes : Bytes_32;
       OTK       : SPARKNaCl.MAC.Poly_1305_Key;
    begin
-      --  Step 1: Generate the Poly1305 one-time key from ChaCha20 with
-      --  counter 0 (RFC 8439 §2.6).
+      --  RFC 8439 2.6: the one-time Poly1305 key is the first 32 bytes of the
+      --  ChaCha20 keystream at counter 0.
       SPARKNaCl.Stream.ChaCha20_IETF (OTK_Bytes, N, K, 0);
       SPARKNaCl.MAC.Construct (OTK, OTK_Bytes);
 
-      --  Step 2: Encrypt with ChaCha20 starting at counter 1.
-      --  AVX-512 fast path processes the body in 1024-byte stripes
-      --  (16 parallel ChaCha20 streams via zmm). Falls back to scalar
-      --  for any sub-1024 tail and on CPUs without AVX-512F.
+      --  Keystream XOR, in place. AVX-512 path: whole 1 KB blocks through the
+      --  vector core, the tail through the scalar stream via a small
+      --  temporary. Scalar path: the stream routine needs distinct source and
+      --  destination, so it reads a copy (that path is the slow one anyway).
       if SPARKTLSCrypto.ChaCha20_AVX512.Has_AVX512_ChaCha20
-         and then M'Length >= 1024
+         and then Buf'Length >= 1024
       then
          declare
-            --  Copy plaintext into C; AVX-512 path encrypts in place.
-            Pos       : N32 := 0;
-            Counter   : Unsigned_32 := 1;
-            Total     : constant N32 := N32 (M'Length);
-            Bulk_Last : constant N32 := (Total / 1024) * 1024;
-            Key_Bytes : constant Bytes_32 := SPARKNaCl.Core.Serialize (K);
+            Pos         : N32 := 0;
+            Counter     : Unsigned_32 := 1;
+            Total       : constant N32 := N32 (Buf'Length);
+            Bulk_Last   : constant N32 := (Total / 1024) * 1024;
+            Key_Bytes   : constant Bytes_32 := SPARKNaCl.Core.Serialize (K);
             Nonce_Bytes : constant Bytes_12 := Bytes_12 (N);
          begin
-            --  Stage the message into C, then encrypt in place.
-            C := M;
             while Pos < Bulk_Last loop
-               --  Loop invariant: Pos is always a 1024-byte multiple
-               --  in [0, Bulk_Last) and Bulk_Last <= C'Length, so the
-               --  slice C (Pos .. Pos + 1023) is always in range.
                pragma Loop_Invariant
                  (Pos >= 0
                   and Pos < Bulk_Last
                   and Pos mod 1024 = 0
                   and Bulk_Last <= Total
-                  and Pos + 1023 <= C'Last);
+                  and Pos + 1023 <= Buf'Last);
                SPARKTLSCrypto.ChaCha20_AVX512.Encrypt_1024_InPlace
-                 (Buf     => C (Pos .. Pos + 1023),
+                 (Buf     => Buf (Pos .. Pos + 1023),
                   K       => Key_Bytes,
                   N       => Nonce_Bytes,
                   Counter => Counter);
                Pos := Pos + 1024;
                Counter := Counter + 16;
             end loop;
-            --  Tail (< 1024 bytes): scalar path for the remainder.
-            --  Hoist Tail_Len into a constant — SPARK requires subtype
-            --  constraints to come from constants, not variable inputs
-            --  (RM E0007).
+
             if Pos < Total then
                declare
                   Tail_Len    : constant N32 := Total - Pos;
-                  Tail_Plain  : Byte_Seq (0 .. Tail_Len - 1) :=
-                                   M (Pos .. Total - 1);
+                  Tail_Plain  : constant Byte_Seq (0 .. Tail_Len - 1) :=
+                                   Buf (Pos .. Total - 1);
                   Tail_Cipher : Byte_Seq (0 .. Tail_Len - 1);
                begin
                   SPARKNaCl.Stream.ChaCha20_IETF_Xor
                     (C => Tail_Cipher, M => Tail_Plain,
                      N => N, K => K, Counter => Counter);
-                  C (Pos .. Total - 1) := Tail_Cipher;
+                  Buf (Pos .. Total - 1) := Tail_Cipher;
                end;
             end if;
          end;
       else
-         SPARKNaCl.Stream.ChaCha20_IETF_Xor
-           (C => C, M => M, N => N, K => K, Counter => 1);
+         declare
+            Plain : constant Byte_Seq := Buf;
+         begin
+            SPARKNaCl.Stream.ChaCha20_IETF_Xor
+              (C => Buf, M => Plain, N => N, K => K, Counter => 1);
+         end;
       end if;
 
-      --  Step 3: Poly1305 tag over (AAD || pad || C || pad || lengths).
-      --  3-tier dispatch:
-      --    AVX-512 IFMA (radix-2⁴⁴, vpmadd52luq/huq)         — fastest
-      --    AVX-512F vpmuludq (radix-2²⁶, 8-block batch)      — older AVX-512
-      --    Fast scalar (radix-2²⁶ 5-limb)                    — software baseline
+      --  RFC 8439 2.8: Poly1305 over pad16(AAD) || pad16(C) || len(AAD) || len(C).
       declare
-         Auth_Msg : constant Byte_Seq := Gen_Auth_Msg (C, AAD);
+         Auth_Msg : constant Byte_Seq := Gen_Auth_Msg (Buf, AAD);
       begin
          if SPARKTLSCrypto.Poly1305_AVX512_IFMA.Has_AVX512_IFMA_Poly1305 then
             SPARKTLSCrypto.Poly1305_AVX512_IFMA.Onetimeauth
@@ -180,6 +170,19 @@ is
             SPARKTLSCrypto.Poly1305.Onetimeauth (Tag, Auth_Msg, OTK);
          end if;
       end;
+   end Encrypt_InPlace;
+
+   procedure Encrypt
+     (C   :    out Byte_Seq;
+      Tag :    out Bytes_16;
+      M   : in     Byte_Seq;
+      N   : in     Core.ChaCha20_IETF_Nonce;
+      K   : in     Core.ChaCha20_Key;
+      AAD : in     Byte_Seq)
+   is
+   begin
+      C := M;
+      Encrypt_InPlace (Buf => C, Tag => Tag, N => N, K => K, AAD => AAD);
    end Encrypt;
 
 end SPARKTLSCrypto.ChaCha20_Poly1305;

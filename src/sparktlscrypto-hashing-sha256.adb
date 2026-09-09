@@ -6,13 +6,30 @@
 with Interfaces;              use Interfaces;
 with System.Machine_Code;     use System.Machine_Code;
 package body SPARKTLSCrypto.Hashing.SHA256 with
-   SPARK_Mode => Off  --  Machine_Code requires SPARK_Mode Off
+   SPARK_Mode => On
 is
+   --  The SPARK_Mode => Off boundary is drawn around exactly the
+   --  Machine_Code subprograms (CPUID probe, SHA-NI block function)
+   --  and the dispatcher that takes 'Address of a Byte_Seq element.
+   --  Everything else -- the software core and the streaming state
+   --  machine -- is analyzed. Callable-from-SPARK subprograms get an
+   --  analyzed declaration here; only their bodies are Off.
+
+   function Detect_SHA_NI return Boolean
+   with Global => null;
+
+   procedure Process_Block
+     (S    : in out State_Array;
+      Data : Byte_Seq;
+      Pos  : N32)
+   with Global => null, Always_Terminates,
+        Pre => Data'Last >= 63 and then Data'First <= Pos
+               and then Pos <= Data'Last - 63;
    ----------------------------------------------------------------------------
    --  CPUID detection (cached at elaboration)
    ----------------------------------------------------------------------------
 
-   function Detect_SHA_NI return Boolean is
+   function Detect_SHA_NI return Boolean with SPARK_Mode => Off is
       EAX, EBX, ECX, EDX : Unsigned_32;
    begin
       Asm ("cpuid",
@@ -75,7 +92,8 @@ is
       14 => (16#78A5636F748F82EE#, 16#8CC7020884C87814#),
       15 => (16#A4506CEB90BEFFFA#, 16#C67178F2BEF9A3F7#));
 
-   procedure Process_Block_HW (S : in out State_Array; Data : System.Address) is
+   procedure Process_Block_HW (S : in out State_Array; Data : System.Address)
+   with SPARK_Mode => Off is
    begin
       --  Faithful translation of sha256-x86.c using inline asm.
       --  Register usage:
@@ -269,10 +287,6 @@ is
    --  Helpers
    ----------------------------------------------------------------------------
 
-   Init_State : constant State_Array :=
-     (16#6a09e667#, 16#bb67ae85#, 16#3c6ef372#, 16#a54ff53a#,
-      16#510e527f#, 16#9b05688c#, 16#1f83d9ab#, 16#5be0cd19#);
-
    type W_Array is array (0 .. 15) of Unsigned_32;
 
    K_256 : constant array (0 .. 63) of Unsigned_32 :=
@@ -339,12 +353,17 @@ is
      (Shift_Left (Unsigned_32 (Data (Pos)), 24) or
       Shift_Left (Unsigned_32 (Data (Pos + 1)), 16) or
       Shift_Left (Unsigned_32 (Data (Pos + 2)), 8) or
-      Unsigned_32 (Data (Pos + 3)));
+      Unsigned_32 (Data (Pos + 3)))
+   with Pre => Data'Last >= 3 and then Pos >= Data'First
+               and then Pos <= Data'Last - 3;
 
    procedure Process_Block_SW
      (S    : in out State_Array;
       Data : Byte_Seq;
       Pos  : N32)
+   with Global => null, Always_Terminates,
+        Pre => Data'Last >= 63 and then Data'First <= Pos
+               and then Pos <= Data'Last - 63
    is
       A : Unsigned_32 := S (0);
       B : Unsigned_32 := S (1);
@@ -393,7 +412,8 @@ is
       S (7) := S (7) + H;
    end Process_Block_SW;
 
-   procedure Process_Block (S : in out State_Array; Data : Byte_Seq; Pos : N32) is
+   procedure Process_Block (S : in out State_Array; Data : Byte_Seq; Pos : N32)
+   with SPARK_Mode => Off is
    begin
       if SHA_NI_Available then
          Process_Block_HW (S, Data (Pos)'Address);
@@ -404,6 +424,7 @@ is
 
    procedure State_To_Digest (Output : out Digest; S : State_Array) is
    begin
+      Output := (others => 0);
       for I in 0 .. 7 loop
          Output (I32 (I * 4))     := Byte (Shift_Right (S (I), 24));
          Output (I32 (I * 4 + 1)) := Byte (Shift_Right (S (I), 16) and 16#FF#);
@@ -425,7 +446,7 @@ is
    end Init;
 
    procedure Update (Ctx : in out Context; Data : Byte_Seq) is
-      Pos       : N32 := Data'First;
+      Pos       : I32 := Data'First;
       Remaining : N32;
       Space     : N32;
    begin
@@ -454,6 +475,10 @@ is
 
       --  Process full blocks directly
       while Remaining >= 64 loop
+         pragma Loop_Variant (Decreases => Remaining);
+         pragma Loop_Invariant
+           (Pos >= Data'First and then Remaining >= 0
+              and then Pos + Remaining - 1 = Data'Last);
          Process_Block (Ctx.State, Data, Pos);
          Pos := Pos + 64;
          Remaining := Remaining - 64;
@@ -470,22 +495,26 @@ is
 
    procedure Final (Ctx : in out Context; Output : out Digest) is
       Bit_Len : constant Unsigned_64 := Ctx.Total * 8;
+      --  Next free slot after the 0x80 marker. A local, because it
+      --  transiently reaches 64 -- one past the buffer -- which the
+      --  Buf_Len component's 0 .. 63 bound rightly forbids.
+      P       : N32;
    begin
       --  Append 0x80
       Ctx.Buffer (Ctx.Buf_Len) := 16#80#;
-      Ctx.Buf_Len := Ctx.Buf_Len + 1;
+      P := Ctx.Buf_Len + 1;
 
       --  Need room for 8-byte length; if not, pad+process extra block
-      if Ctx.Buf_Len > 56 then
-         for I in Ctx.Buf_Len .. 63 loop
+      if P > 56 then
+         for I in P .. 63 loop
             Ctx.Buffer (I) := 0;
          end loop;
          Process_Block (Ctx.State, Ctx.Buffer, 0);
-         Ctx.Buf_Len := 0;
+         P := 0;
       end if;
 
       --  Pad zeros up to length field
-      for I in Ctx.Buf_Len .. 55 loop
+      for I in P .. 55 loop
          Ctx.Buffer (I) := 0;
       end loop;
 

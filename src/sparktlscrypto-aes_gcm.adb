@@ -9,13 +9,11 @@ package body SPARKTLSCrypto.AES_GCM with
    SPARK_Mode => On
 is
 
-   --  Short alias so call sites read like AES.Cipher (...) without
-   --  shadowing SPARKNaCl.AES (still used here for AES128_Key etc.).
    package HW_AES renames SPARKTLSCrypto.AES_Dispatch;
+
    ----------------------------------------------------------------------------
    --  GF(2^128) multiplication for GHASH (NIST SP 800-38D)
    --  Bit-by-bit method: 128 iterations.
-   --  Profiling shows GHASH is ~2% of handshake time — not a bottleneck.
    ----------------------------------------------------------------------------
 
    --  Inline-renamed: the dispatcher picks PCLMULQDQ when available,
@@ -27,7 +25,6 @@ is
    ----------------------------------------------------------------------------
    --  GHASH
    ----------------------------------------------------------------------------
-
    procedure XOR_Block (Dst : in out Bytes_16;
                         Src : in     Bytes_16) is
    begin
@@ -132,7 +129,6 @@ is
    ----------------------------------------------------------------------------
    --  AES-CTR
    ----------------------------------------------------------------------------
-
    procedure AES_CTR_128
      (Output  :    out Byte_Seq;
       Input   : in     Byte_Seq;
@@ -214,14 +210,13 @@ is
    --  on any-First slice (so callers can pass `Output.Data (Pos ..
    --  Pos + Len - 1)` directly and skip the intermediate Ciphertext
    --  allocation / copy that the Output-version requires).
-   ----------------------------------------------------------------------------
-
+   --
    --  Both InPlace variants pre-byteswap the round keys ONCE up-front
    --  (one PSHUFB per round-key word, ~22 PSHUFBs total for AES-128
    --  / 30 for AES-256) and then use the Cipher_*_PreSw fast path in
    --  the loop, which avoids the per-block PSHUFB.  At 16 KB / 1024
    --  blocks, that's ~11K PSHUFBs saved for AES-128.
-
+   ----------------------------------------------------------------------------
    procedure AES_CTR_128_InPlace
      (Buf : in out Byte_Seq;
       K   : in     AES.AES128_Round_Keys;
@@ -451,7 +446,6 @@ is
    ----------------------------------------------------------------------------
    --  GCM Encrypt / Decrypt (AES-128)
    ----------------------------------------------------------------------------
-
    procedure Encrypt
      (C       :    out Byte_Seq;
       Tag     :    out Bytes_16;

@@ -22,7 +22,8 @@ is
                   IKM'First = 0 and
                   IKM'Length > 0 and
                   IKM'Length < U32 (N32'Last - 64) and
-                  (if Salt'Length > 0 then Salt'First = 0);
+                  (if Salt'Length > 0 then Salt'First = 0) and
+                  IKM'Last < N32'Last - 256 and Salt'Last < N32'Last - 256;
 
    procedure Expand (OKM  :    out OKM_Seq;
                      PRK  : in     Hashing.SHA256.Digest;
@@ -34,7 +35,8 @@ is
                   OKM'Length <= 255 * Hash_Len and
                   PRK'First = 0 and
                   (if Info'Length > 0 then Info'First = 0) and
-                  Info'Length < U32 (N32'Last) - 97,
+                  Info'Length < U32 (N32'Last) - 97 and
+                  Info'Last < N32'Last - 512,
         Post   => OKM'Initialized;
 
 end SPARKTLSCrypto.HKDF;

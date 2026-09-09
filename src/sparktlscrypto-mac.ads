@@ -15,8 +15,9 @@ is
    with Global => null,
         Relaxed_Initialization => Output,
         Pre    => M'First = 0 and
-                  M'Last <= N32'Last - 64 and
-                  (if K'Length > 0 then K'First = 0),
+                  M'Last < N32'Last - 256 and
+                  (if K'Length > 0 then K'First = 0) and
+                  K'Last < N32'Last - 256,
         Post   => Output'Initialized;
 
 end SPARKTLSCrypto.MAC;

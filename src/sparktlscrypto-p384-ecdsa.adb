@@ -270,9 +270,4 @@ is
       Encode (Qy, T1);
    end Public_Key;
 
-begin
-   --  Initialize group order constants N and N_M0I at package elaboration.
-   Decode (N, P384_N);
-   N.Len := W384;
-   N_M0I := Ninv32 (N.W (0));
 end SPARKTLSCrypto.P384.ECDSA;
