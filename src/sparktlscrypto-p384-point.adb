@@ -4,7 +4,7 @@
 --  for key exchange.
 
 with Interfaces;           use Interfaces;
-with SPARKTLSCrypto.BigNat;      use SPARKTLSCrypto.BigNat;
+with SPARKTLSCrypto.BigNat64;    use SPARKTLSCrypto.BigNat64;
 with SPARKTLSCrypto.P384.Field;  use SPARKTLSCrypto.P384.Field;
 
 package body SPARKTLSCrypto.P384.Point with

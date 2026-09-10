@@ -184,6 +184,31 @@ is
                and then Signature'Last >= N32 (Sig_Len) - 1
                and then Signature'Last < N32'Last;
 
+   --  CRT form of the private key (RFC 8017 §3.2 (ii)). Each component
+   --  is big-endian, right-aligned in a Prime_Len-byte field:
+   --    P, Q       the primes (Prime_Len bytes each, n = p * q)
+   --    DP, DQ     d mod (p - 1), d mod (q - 1)
+   --    QInv       q^-1 mod p
+   --  Signing with a Valid CRT_Params runs two half-size exponentiations
+   --  (about 4x faster than the plain d exponent) and checks the result
+   --  against the public key before releasing it (Boneh-DeMillo-Lipton
+   --  fault defence). Any shape problem with the parameters, or a failed
+   --  check, falls back to the plain exponent.
+   Max_RSA_Prime_Bytes : constant := Max_RSA_Bytes / 2;
+   subtype Prime_Bytes is Byte_Seq (0 .. Max_RSA_Prime_Bytes - 1);
+
+   type CRT_Params is record
+      Valid     : Boolean := False;
+      Prime_Len : N32 range 0 .. Max_RSA_Prime_Bytes := 0;
+      P         : Prime_Bytes := (others => 0);
+      Q         : Prime_Bytes := (others => 0);
+      DP        : Prime_Bytes := (others => 0);
+      DQ        : Prime_Bytes := (others => 0);
+      QInv      : Prime_Bytes := (others => 0);
+   end record;
+
+   No_CRT : constant CRT_Params := (others => <>);
+
    --  Sign a message hash using RSA-PSS-RSAE.
    --
    --  M_Hash    : the hash of the content to sign
@@ -195,6 +220,9 @@ is
    --  Salt      : random salt (hash_len bytes)
    --  Signature : output buffer (at least Mod_Len bytes)
    --  OK        : True if signing succeeded
+   --  Pub_Exp   : public exponent e; with CRT, enables the verify-after-
+   --              sign check (0 = plain path)
+   --  CRT       : optional CRT private key (see CRT_Params)
    procedure Sign_PSS
      (M_Hash    : in     Byte_Seq;
       Hash_Len  : in     N32;
@@ -205,7 +233,9 @@ is
       Salt      : in     Byte_Seq;
       Signature :    out Byte_Seq;
       Sig_Len   :    out N32;
-      OK        :    out Boolean)
+      OK        :    out Boolean;
+      Pub_Exp   : in     Unsigned_32 := 0;
+      CRT       : in     CRT_Params  := No_CRT)
    with Pre => Mod_Len >= 64 and then Mod_Len <= Max_RSA_Bytes
                and then Hash_Len in 32 | 48 | 64
                and then M_Hash'First = 0
@@ -239,7 +269,9 @@ is
       Priv_Exp  : in     Byte_Seq;
       Signature :    out Byte_Seq;
       Sig_Len   :    out N32;
-      OK        :    out Boolean)
+      OK        :    out Boolean;
+      Pub_Exp   : in     Unsigned_32 := 0;
+      CRT       : in     CRT_Params  := No_CRT)
    with Pre => Mod_Len >= 64 and then Mod_Len <= Max_RSA_Bytes
                and then Hash_Len in 32 | 48 | 64
                and then M_Hash'First = 0

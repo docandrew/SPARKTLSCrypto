@@ -4,13 +4,17 @@
 --  Shared by P384.ECDSA and P384.Point.
 
 with SPARKNaCl;        use SPARKNaCl;
-with SPARKTLSCrypto.BigNat;  use SPARKTLSCrypto.BigNat;
+with SPARKTLSCrypto.BigNat64;  use SPARKTLSCrypto.BigNat64;
 
 package SPARKTLSCrypto.P384.Field with
    SPARK_Mode => On
 is
    pragma Elaborate_Body;
-   W384 : constant := 12;  --  384 bits = 12 x 32-bit words
+   --  384 bits = 6 x 64-bit limbs. Moved from the 32-bit BigNat to
+   --  BigNat64 on 2026-09-10: one 64x64->128 multiply replaces four
+   --  32x32->64 ones, so the Montgomery inner loop runs 36 iterations
+   --  instead of 144.
+   W384 : constant := 6;
 
    --  P-384 constants (big-endian byte arrays)
    P384_P : constant Byte_Seq (0 .. 47) :=
@@ -52,12 +56,11 @@ is
 
    P : constant Big_Nat :=
      (Len => W384,
-      W   => (16#FFFFFFFF#, 16#00000000#, 16#00000000#, 16#FFFFFFFF#,
-              16#FFFFFFFE#, 16#FFFFFFFF#, 16#FFFFFFFF#, 16#FFFFFFFF#,
-              16#FFFFFFFF#, 16#FFFFFFFF#, 16#FFFFFFFF#, 16#FFFFFFFF#,
+      W   => (16#00000000FFFFFFFF#, 16#FFFFFFFF00000000#, 16#FFFFFFFFFFFFFFFE#,
+              16#FFFFFFFFFFFFFFFF#, 16#FFFFFFFFFFFFFFFF#, 16#FFFFFFFFFFFFFFFF#,
               others => 0));
-
-   P_M0I : constant Word := 16#00000001#;
+   --  -P^-1 mod 2^64 (P mod 2^64 = 2^32 - 1, whose inverse is -(2^32 + 1))
+   P_M0I : constant Word := 16#0000000100000001#;
 
    function Initialized return Boolean is (P.Len = W384)
      with Ghost;
