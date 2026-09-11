@@ -30,6 +30,14 @@ is
    Word_Bits : constant := 64;
    Word_Bytes : constant := 8;
    Top_Bit   : constant Word  := 16#8000_0000_0000_0000#;
+
+   --  "Top bit of W is set", as an explicit single-bit test. Written this
+   --  way rather than (W and Top_Bit) /= 0 because GCC compiles the mask
+   --  form into a sign test on the whole limb (cmp $0 / js), which a
+   --  taint tracker such as memcheck has to treat as depending on every
+   --  bit of W; the shift form is exact. Same truth value, same cost.
+   function Top_Bit_Set (W : Word) return Boolean is
+     (Shift_Right (W, Word_Bits - 1) = 1);
    Word_Mask : constant DWord := DWord (Word'Last);
 
    subtype Word_Count is Natural range 0 .. Max_Words;
@@ -121,12 +129,19 @@ is
    --  2^(64 Len) - M by a single subtraction, and R^2 follows from a
    --  few doublings and Montgomery squarings instead of 64 * Len
    --  doublings. Constant-time in the value of M (only Len matters).
+   --  Result is R^2 mod M only when M has its top bit set (the first
+   --  step relies on 2^(64 Len) - M being below M); for any other M the
+   --  value is merely some Len-word number. That is deliberately NOT a
+   --  precondition: absence of runtime errors holds regardless, and the
+   --  RSA CRT path calls this on secret primes where a branch on the top
+   --  bit would itself be a (memcheck-visible) key-dependent decision --
+   --  it validates the key bytes up front and lets verify-after-sign
+   --  catch anything malformed.
    procedure R2_Mod
      (R2  : out Big_Nat;
       M   : in  Big_Nat;
       M0I : in  Word)
-   with Pre  => M.Len > 0
-                and then (M.W (M.Len - 1) and Top_Bit) /= 0,
+   with Pre  => M.Len > 0,
         Post => R2.Len = M.Len;
 
    --  Result = Base^Exp mod M for a PUBLIC exponent (RSA e): plain
@@ -150,6 +165,20 @@ is
    --  operation sequence and memory access pattern do not depend on
    --  the exponent bits.
    procedure Modpow
+     (Result : out Big_Nat;
+      Base   : in  Big_Nat;
+      Exp    : in  Byte_Seq;
+      M      : in  Big_Nat;
+      M0I    : in  Word)
+   with Pre  => Base.Len = M.Len and M.Len > 0
+               and Exp'First = 0 and Exp'Length > 0
+               and Exp'Last < N32'Last / 8,
+        Post => Result.Len = M.Len;
+
+   --  Same computation for a modulus KNOWN to have its top bit set (the
+   --  caller has checked it on the key bytes): Montgomery constants come
+   --  from R2_Mod with no branch on M's value anywhere in the path.
+   procedure Modpow_Top
      (Result : out Big_Nat;
       Base   : in  Big_Nat;
       Exp    : in  Byte_Seq;

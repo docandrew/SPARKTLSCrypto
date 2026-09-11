@@ -391,9 +391,25 @@ is
       Monty_Mul (Result, Acc, One, M, M0I);
    end Modpow_Public;
 
-   procedure Modpow
+   --  Fixed-window (4-bit) constant-time exponentiation from Montgomery
+   --  forms of Base (Base_M) and of 1 (One_M); shared by Modpow and
+   --  Modpow_Top, which differ only in how those forms are obtained.
+   procedure Modpow_Core
      (Result : out Big_Nat;
-      Base   : in  Big_Nat;
+      Base_M : in  Big_Nat;
+      One_M  : in  Big_Nat;
+      Exp    : in  Byte_Seq;
+      M      : in  Big_Nat;
+      M0I    : in  Word)
+   with Pre  => Base_M.Len = M.Len and One_M.Len = M.Len and M.Len > 0
+                and Exp'First = 0 and Exp'Length > 0
+                and Exp'Last < N32'Last / 8,
+        Post => Result.Len = M.Len;
+
+   procedure Modpow_Core
+     (Result : out Big_Nat;
+      Base_M : in  Big_Nat;
+      One_M  : in  Big_Nat;
       Exp    : in  Byte_Seq;
       M      : in  Big_Nat;
       M0I    : in  Word)
@@ -406,31 +422,8 @@ is
       Tmp     : Big_Nat;
       Sel     : Big_Nat;
       One     : Big_Nat;
-      Base_M  : Big_Nat;   --  Base in Montgomery form
-      One_M   : Big_Nat;   --  R mod M (Montgomery one)
       Total_Bits : constant N32 := N32 (Exp'Length) * 8;
    begin
-      --  Montgomery forms of 1 and Base
-      if (M.W (Len - 1) and Top_Bit) /= 0 then
-         declare
-            R2  : Big_Nat;
-            Z   : Big_Nat;
-         begin
-            R2_Mod (R2, M, M0I);
-            Monty_Mul (Base_M, Base, R2, M, M0I);
-            --  R mod M = 2^(32 Len) - M
-            Zero (Z, Len);
-            One_M := CT_Sub (Z, M, 1).Value;
-         end;
-      else
-         Base_M := Base;
-         To_Monty (Base_M, M, M0I);
-         Zero (One_M, Len);
-         One_M.W (0) := 1;
-         To_Monty (One_M, M, M0I);
-      end if;
-      pragma Assert (Base_M.Len = Len and One_M.Len = Len);
-
       --  T (w) = Base^w in Montgomery form
       T (0) := One_M;
       T (1) := Base_M;
@@ -487,7 +480,62 @@ is
       Zero (One, Len);
       One.W (0) := 1;
       Monty_Mul (Result, Acc, One, M, M0I);
+   end Modpow_Core;
+
+   procedure Modpow
+     (Result : out Big_Nat;
+      Base   : in  Big_Nat;
+      Exp    : in  Byte_Seq;
+      M      : in  Big_Nat;
+      M0I    : in  Word)
+   is
+      Len     : constant Word_Count := M.Len;
+      Base_M  : Big_Nat;   --  Base in Montgomery form
+      One_M   : Big_Nat;   --  R mod M (Montgomery one)
+   begin
+      --  Montgomery forms of 1 and Base. The branch is on M's top bit:
+      --  every caller of this entry passes a public modulus (RSA n,
+      --  the P-384 field and group orders); the CRT path uses Modpow_Top.
+      if Top_Bit_Set (M.W (Len - 1)) then
+         declare
+            R2  : Big_Nat;
+            Z   : Big_Nat;
+         begin
+            R2_Mod (R2, M, M0I);
+            Monty_Mul (Base_M, Base, R2, M, M0I);
+            --  R mod M = 2^(64 Len) - M
+            Zero (Z, Len);
+            One_M := CT_Sub (Z, M, 1).Value;
+         end;
+      else
+         Base_M := Base;
+         To_Monty (Base_M, M, M0I);
+         Zero (One_M, Len);
+         One_M.W (0) := 1;
+         To_Monty (One_M, M, M0I);
+      end if;
+      Modpow_Core (Result, Base_M, One_M, Exp, M, M0I);
    end Modpow;
+
+   procedure Modpow_Top
+     (Result : out Big_Nat;
+      Base   : in  Big_Nat;
+      Exp    : in  Byte_Seq;
+      M      : in  Big_Nat;
+      M0I    : in  Word)
+   is
+      Len     : constant Word_Count := M.Len;
+      Base_M  : Big_Nat;
+      One_M   : Big_Nat;
+      R2      : Big_Nat;
+      Z       : Big_Nat;
+   begin
+      R2_Mod (R2, M, M0I);
+      Monty_Mul (Base_M, Base, R2, M, M0I);
+      Zero (Z, Len);
+      One_M := CT_Sub (Z, M, 1).Value;
+      Modpow_Core (Result, Base_M, One_M, Exp, M, M0I);
+   end Modpow_Top;
 
    ----------------------------------------------------------------------------
    --  CRT support: plain multiply-add, Montgomery-based reduction, and
@@ -508,7 +556,7 @@ is
          Result.W (I) := C.W (I);
       end loop;
 
-      --  Row I adds A (I) * B * 2^(32 I). Position I + Len is still zero
+      --  Row I adds A (I) * B * 2^(64 I). Position I + Len is still zero
       --  when the row's final carry lands there (row I - 1 wrote up to
       --  I + Len - 1), so a plain store is exact.
       for I in 0 .. Len - 1 loop

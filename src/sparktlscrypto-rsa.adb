@@ -149,7 +149,7 @@ is
          declare
             Result : Big_Nat;
          begin
-            if Exp > 0 and then (M.W (M.Len - 1) and Top_Bit) /= 0 then
+            if Exp > 0 and then Top_Bit_Set (M.W (M.Len - 1)) then
                --  Public exponent, public base: plain ladder with R^2
                --  from squarings (BigNat64.Modpow_Public / R2_Mod).
                declare
@@ -944,23 +944,29 @@ is
    begin
       OK := False;
 
+      --  No key-shape checks here on purpose. Parity and top-bit tests
+      --  on p and q would be branches on key material (and GCC compiles
+      --  a top-bit test into a sign test that taint tracking sees as
+      --  depending on the whole limb). A malformed key -- even prime,
+      --  short prime, unbalanced sizes -- simply yields a wrong CRT
+      --  result, which the verify-after-sign check below catches, and
+      --  the plain exponent is used instead. Nothing on this path can
+      --  fault for such a key: R2_Mod / Ninv / Modpow_Top are proved free
+      --  of runtime errors for any modulus.
+
       Decode (M,  Modulus (0 .. N32 (Mod_Len) - 1));
       Decode (P,  CRT.P (0 .. PL - 1));
       Decode (Q,  CRT.Q (0 .. PL - 1));
       Decode (QI, CRT.QInv (0 .. PL - 1));
       Decode (XN, X (0 .. N32 (X_Len) - 1));
 
-      --  Shape checks: balanced odd primes with their top bit set (so
-      --  R2_Mod applies) and a modulus of exactly twice their size.
+      --  Size checks only (all on public lengths): balanced primes and a
+      --  modulus of exactly twice their size.
       if P.Len = 0
         or else Q.Len /= P.Len
         or else QI.Len /= P.Len
         or else 2 * P.Len /= M.Len
         or else XN.Len /= M.Len
-        or else (P.W (0) and 1) = 0
-        or else (Q.W (0) and 1) = 0
-        or else (P.W (P.Len - 1) and Top_Bit) = 0
-        or else (Q.W (Q.Len - 1) and Top_Bit) = 0
       then
          return;
       end if;
@@ -975,8 +981,8 @@ is
       Mod_Reduce (XQ, XN, Q, Q0I, R2Q);
 
       --  m1 = (x mod p)^dP mod p ; m2 = (x mod q)^dQ mod q
-      Modpow (MP, XP, CRT.DP (0 .. PL - 1), P, P0I);
-      Modpow (MQ, XQ, CRT.DQ (0 .. PL - 1), Q, Q0I);
+      Modpow_Top (MP, XP, CRT.DP (0 .. PL - 1), P, P0I);
+      Modpow_Top (MQ, XQ, CRT.DQ (0 .. PL - 1), Q, Q0I);
 
       --  h = qInv * (m1 - m2) mod p. m2 < q may exceed p, so reduce it
       --  first; then a single borrow-corrected subtraction suffices.
@@ -1035,10 +1041,27 @@ is
                   Pub_OK : Boolean;
                begin
                   RSA_Public (Y, X_Len, Modulus, Mod_Len, Pub_Exp, Pub_OK);
-                  if Pub_OK and then Y = Saved then
-                     OK := True;
-                     return;
-                  end if;
+                  --  Constant-time equality: both operands are public
+                  --  (the signature and the padded message), but the
+                  --  compare runs on the signing path, so no early exit.
+                  declare
+                     Diff : Byte_Seq (0 .. 0) := (0 => 0);
+                  begin
+                     for I in Y'Range loop
+                        Diff (0) := Diff (0) or (Y (I) xor Saved (I));
+                     end loop;
+                     --  This is the one decision on this path that a taint
+                     --  tracker reports: the bit "did the CRT result
+                     --  verify" is public by construction (success => the
+                     --  signature goes out; failure => the caller observes
+                     --  the plain path), but its operands derive from the
+                     --  key. Left as it is, and classified in the ctgrind
+                     --  lane, rather than hidden from the tool.
+                     if Pub_OK and then Diff (0) = 0 then
+                        OK := True;
+                        return;
+                     end if;
+                  end;
                end;
             end if;
             X (0 .. N32 (X_Len) - 1) := Saved;

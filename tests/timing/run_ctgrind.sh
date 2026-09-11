@@ -42,8 +42,13 @@ if [ -n "${NIX_CC:-}" ] && [ -f "$NIX_CC/nix-support/dynamic-linker" ]; then
   done
 fi
 
+#  run_one NAME MODE [COUNT]
+#    clean   : must report no errors
+#    canary  : must report at least one (negative control)
+#    xfail   : known finding, must still reproduce
+#    exact N : must report exactly N errors (classified sites, see below)
 run_one() {
-  local name="$1" mode="$2"
+  local name="$1" mode="$2" want="${3:-}"
   local exe="$BIN/$name"
   if [ ! -x "$exe" ]; then
     echo "  $name: BINARY MISSING ($exe)"
@@ -70,6 +75,14 @@ run_one() {
     else
       echo "  FAIL  $name (0 errors; canary should have leaked)"
       echo "$out" | sed 's/^/      /' | head -20
+      return 1
+    fi
+  elif [ "$mode" = "exact" ]; then
+    if [ "$errs" -eq "$want" ]; then
+      echo "  PASS  $name ($errs errors; exactly the classified sites)"
+    else
+      echo "  FAIL  $name ($errs errors; expected exactly $want classified sites)"
+      echo "$out" | sed 's/^/      /' | head -30
       return 1
     fi
   elif [ "$mode" = "xfail" ]; then
@@ -101,6 +114,17 @@ run_one ct_aes_gcm           clean || fail=1
 run_one ct_aead_decrypt      clean || fail=1
 run_one ct_rfc6979           clean || fail=1
 run_one ct_hmac              clean || fail=1
+run_one ct_rsa_sign_plain    clean || fail=1
+#  ct_rsa_sign_crt: exactly THREE classified sites, all one decision --
+#  the verify-after-sign check in RSA_Private_Fast (a constant-time
+#  compare of two PUBLIC outputs, signature and padded message, whose
+#  bytes nevertheless derive from the poisoned key) and the propagation
+#  of its Boolean through Sign_PSS's OK and the harness's print of it.
+#  Reported as seen, not masked. Any other count is a regression: more
+#  means a new key-dependent branch; fewer means the poison stopped
+#  reaching the signer. A toolchain bump that moves the count is
+#  re-triaged against the valgrind output, not renumbered.
+run_one ct_rsa_sign_crt      exact 3 || fail=1
 
 echo ""
 if [ "$fail" -eq 0 ]; then
