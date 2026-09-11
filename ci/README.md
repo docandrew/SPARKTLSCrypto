@@ -33,5 +33,13 @@ nix develop --command bash ci/timing.sh dudect
 `ctgrind` runs in the default hosted CI lane on x86_64 Linux. Any ctgrind
 finding, harness canary failure, or Valgrind crash fails the job.
 
+One harness is pinned to an exact count rather than zero: `ct_rsa_sign_crt`
+must report exactly 3 memcheck errors. All three are one decision, the
+verify-after-sign check on the RSA CRT path, whose outcome is public by
+construction but whose operands derive from the poisoned key. The count is
+enforced in both directions (more means a new key-dependent branch, fewer
+means the poison stopped reaching the signer) and is not masked from the
+tool. See the comment above that entry in `tests/timing/run_ctgrind.sh`.
+
 `dudect` is statistical and machine-sensitive, so it should not be a default
 required check.

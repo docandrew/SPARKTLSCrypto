@@ -2,7 +2,7 @@
 --  Uses SPARK-proven BigNat for group order arithmetic.
 
 with SPARKNaCl;                use SPARKNaCl;
-with SPARKTLSCrypto.BigNat;     use SPARKTLSCrypto.BigNat;
+with SPARKTLSCrypto.BigNat64;   use SPARKTLSCrypto.BigNat64;
 with SPARKTLSCrypto.P384.Field;
 
 package SPARKTLSCrypto.P384.ECDSA with
@@ -11,13 +11,13 @@ is
    pragma Elaborate_Body;
    N : constant Big_Nat :=
      (Len => Field.W384,
-      W   => (16#CCC52973#, 16#ECEC196A#, 16#48B0A77A#, 16#581A0DB2#,
-              16#F4372DDF#, 16#C7634D81#, 16#FFFFFFFF#, 16#FFFFFFFF#,
-              16#FFFFFFFF#, 16#FFFFFFFF#, 16#FFFFFFFF#, 16#FFFFFFFF#,
+      W   => (16#ECEC196ACCC52973#, 16#581A0DB248B0A77A#, 16#C7634D81F4372DDF#,
+              16#FFFFFFFFFFFFFFFF#, 16#FFFFFFFFFFFFFFFF#, 16#FFFFFFFFFFFFFFFF#,
               others => 0));
-   N_M0I : constant Word := 16#E88FDC45#;
+   --  -N^-1 mod 2^64
+   N_M0I : constant Word := 16#6ED46089E88FDC45#;
 
-   function Initialized return Boolean is (N.Len = 12)
+   function Initialized return Boolean is (N.Len = Field.W384)
      with Ghost;
 
    function Verify

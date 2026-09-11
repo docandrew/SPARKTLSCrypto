@@ -4,7 +4,7 @@
 with SPARKTLSCrypto.Hashing.SHA256;
 with SPARKNaCl.Hashing.SHA384;
 with SPARKNaCl.Hashing.SHA512;
-with SPARKTLSCrypto.BigNat;
+with SPARKTLSCrypto.BigNat64;
 with Interfaces; use Interfaces;
 
 package body SPARKTLSCrypto.RSA with
@@ -108,7 +108,7 @@ is
       Exp     : in     Unsigned_32;
       OK      :    out Boolean)
    is
-      use BigNat;
+      use BigNat64;
       M     : Big_Nat;
       A     : Big_Nat;
       M0I   : Word;
@@ -136,7 +136,7 @@ is
             return;
          end if;
 
-         M0I := Ninv32 (M.W (0));
+         M0I := Ninv (M.W (0));
 
          Decode (A, X_Buf);
 
@@ -146,15 +146,25 @@ is
             return;
          end if;
 
-         E (0) := Byte (Shift_Right (Exp, 24) and 16#FF#);
-         E (1) := Byte (Shift_Right (Exp, 16) and 16#FF#);
-         E (2) := Byte (Shift_Right (Exp, 8) and 16#FF#);
-         E (3) := Byte (Exp and 16#FF#);
-
          declare
             Result : Big_Nat;
          begin
-            Modpow (Result, A, E, M, M0I);
+            if Exp > 0 and then Top_Bit_Set (M.W (M.Len - 1)) then
+               --  Public exponent, public base: plain ladder with R^2
+               --  from squarings (BigNat64.Modpow_Public / R2_Mod).
+               declare
+                  R2 : Big_Nat;
+               begin
+                  R2_Mod (R2, M, M0I);
+                  Modpow_Public (Result, A, Word (Exp), M, M0I, R2);
+               end;
+            else
+               E (0) := Byte (Shift_Right (Exp, 24) and 16#FF#);
+               E (1) := Byte (Shift_Right (Exp, 16) and 16#FF#);
+               E (2) := Byte (Shift_Right (Exp, 8) and 16#FF#);
+               E (3) := Byte (Exp and 16#FF#);
+               Modpow (Result, A, E, M, M0I);
+            end if;
             Encode (X_Buf, Result);
          end;
 
@@ -737,7 +747,7 @@ is
                and (X_Len = 0 or else N32 (X_Len) - 1 <= X'Last)
                and (Exp_Len = 0 or else N32 (Exp_Len) - 1 <= Exp'Last)
    is
-      use BigNat;
+      use BigNat64;
       M     : Big_Nat;
       A     : Big_Nat;
       M0I   : Word;
@@ -766,7 +776,7 @@ is
             return;
          end if;
 
-         M0I := Ninv32 (M.W (0));
+         M0I := Ninv (M.W (0));
 
          Decode (A, X_Buf);
 
@@ -886,6 +896,180 @@ is
    --  Sign_PSS
    ----------------------------------------------------------------------------
 
+   ----------------------------------------------------------------------------
+   --  CRT private-key operation (RFC 8017 §5.1.2 (b)):
+   --    m1 = x^dP mod p,  m2 = x^dQ mod q,
+   --    h  = qInv * (m1 - m2) mod p,  m = m2 + h * q.
+   --  Two exponentiations on half-size moduli. Every step is constant
+   --  time in the secret values; the exponents are the windowed CT
+   --  Modpow, the reductions are Montgomery products.
+   ----------------------------------------------------------------------------
+
+   procedure RSA_Private_CRT
+     (X       : in out Byte_Seq;
+      X_Len   : in     Natural;
+      Modulus : in     Byte_Seq;
+      Mod_Len : in     Natural;
+      CRT     : in     CRT_Params;
+      OK      :    out Boolean)
+   with Pre => X'First = 0 and X'Last < N32'Last
+               and Modulus'First = 0 and Modulus'Last < N32'Last
+               and Mod_Len > 0 and Mod_Len <= Max_RSA_Bytes
+               and X_Len = Mod_Len
+               and N32 (Mod_Len) - 1 <= Modulus'Last
+               and N32 (X_Len) - 1 <= X'Last
+               and CRT.Prime_Len > 0
+               and 2 * Natural (CRT.Prime_Len) = Mod_Len
+   is
+      use BigNat64;
+      PL  : constant N32 := CRT.Prime_Len;
+      M   : Big_Nat;   --  n
+      P   : Big_Nat;
+      Q   : Big_Nat;
+      QI  : Big_Nat;   --  qInv
+      XN  : Big_Nat;   --  x (< n)
+      XP  : Big_Nat;   --  x mod p
+      XQ  : Big_Nat;   --  x mod q
+      MP  : Big_Nat;   --  m1
+      MQ  : Big_Nat;   --  m2
+      MQP : Big_Nat;   --  m2 mod p
+      T   : Big_Nat;   --  m1 - m2 mod p
+      QIM : Big_Nat;   --  qInv in Montgomery form (mod p)
+      H   : Big_Nat;
+      R2P : Big_Nat;
+      R2Q : Big_Nat;
+      Res : Big_Nat;
+      P0I : Word;
+      Q0I : Word;
+   begin
+      OK := False;
+
+      --  No key-shape checks here on purpose. Parity and top-bit tests
+      --  on p and q would be branches on key material (and GCC compiles
+      --  a top-bit test into a sign test that taint tracking sees as
+      --  depending on the whole limb). A malformed key -- even prime,
+      --  short prime, unbalanced sizes -- simply yields a wrong CRT
+      --  result, which the verify-after-sign check below catches, and
+      --  the plain exponent is used instead. Nothing on this path can
+      --  fault for such a key: R2_Mod / Ninv / Modpow_Top are proved free
+      --  of runtime errors for any modulus.
+
+      Decode (M,  Modulus (0 .. N32 (Mod_Len) - 1));
+      Decode (P,  CRT.P (0 .. PL - 1));
+      Decode (Q,  CRT.Q (0 .. PL - 1));
+      Decode (QI, CRT.QInv (0 .. PL - 1));
+      Decode (XN, X (0 .. N32 (X_Len) - 1));
+
+      --  Size checks only (all on public lengths): balanced primes and a
+      --  modulus of exactly twice their size.
+      if P.Len = 0
+        or else Q.Len /= P.Len
+        or else QI.Len /= P.Len
+        or else 2 * P.Len /= M.Len
+        or else XN.Len /= M.Len
+      then
+         return;
+      end if;
+
+      P0I := Ninv (P.W (0));
+      Q0I := Ninv (Q.W (0));
+      R2_Mod (R2P, P, P0I);
+      R2_Mod (R2Q, Q, Q0I);
+
+      --  x mod p, x mod q
+      Mod_Reduce (XP, XN, P, P0I, R2P);
+      Mod_Reduce (XQ, XN, Q, Q0I, R2Q);
+
+      --  m1 = (x mod p)^dP mod p ; m2 = (x mod q)^dQ mod q
+      Modpow_Top (MP, XP, CRT.DP (0 .. PL - 1), P, P0I);
+      Modpow_Top (MQ, XQ, CRT.DQ (0 .. PL - 1), Q, Q0I);
+
+      --  h = qInv * (m1 - m2) mod p. m2 < q may exceed p, so reduce it
+      --  first; then a single borrow-corrected subtraction suffices.
+      Mod_Reduce (MQP, MQ, P, P0I, R2P);
+      Sub_Mod (T, MP, MQP, P);
+      Monty_Mul (QIM, QI, R2P, P, P0I);   --  qInv * R mod p
+      Monty_Mul (H, T, QIM, P, P0I);      --  (t * qInv * R) / R = t * qInv
+
+      --  m = m2 + h * q  (< p * q = n, so it fits Mod_Len bytes)
+      Mul_Add (Res, H, Q, MQ);
+      Encode (X (0 .. N32 (X_Len) - 1), Res);
+      OK := True;
+   end RSA_Private_CRT;
+
+   --  X := X^d mod n. Uses the CRT path when Pub_Exp and CRT allow it
+   --  and the result verifies under e; otherwise (no CRT, odd shapes,
+   --  or a verification mismatch) restores X and runs the plain path.
+   --  The verify-after-sign compares public values only.
+   procedure RSA_Private_Fast
+     (X       : in out Byte_Seq;
+      X_Len   : in     Natural;
+      Modulus : in     Byte_Seq;
+      Mod_Len : in     Natural;
+      Exp     : in     Byte_Seq;
+      Exp_Len : in     Natural;
+      Pub_Exp : in     Unsigned_32;
+      CRT     : in     CRT_Params;
+      OK      :    out Boolean)
+   with Pre => X'First = 0 and X'Last < N32'Last
+               and Modulus'First = 0 and Modulus'Last < N32'Last
+               and Exp'First = 0 and Exp'Last < N32'Last
+               and Mod_Len <= Max_RSA_Bytes
+               and Exp_Len <= Max_RSA_Bytes
+               and (Mod_Len = 0 or else N32 (Mod_Len) - 1 <= Modulus'Last)
+               and (X_Len = 0 or else N32 (X_Len) - 1 <= X'Last)
+               and (Exp_Len = 0 or else N32 (Exp_Len) - 1 <= Exp'Last)
+   is
+   begin
+      if CRT.Valid
+        and then Pub_Exp > 0
+        and then Mod_Len > 0
+        and then X_Len = Mod_Len
+        and then CRT.Prime_Len > 0
+        and then 2 * Natural (CRT.Prime_Len) = Mod_Len
+      then
+         declare
+            Saved  : constant Byte_Seq (0 .. N32 (X_Len) - 1) :=
+              X (0 .. N32 (X_Len) - 1);
+            CRT_OK : Boolean;
+         begin
+            RSA_Private_CRT (X, X_Len, Modulus, Mod_Len, CRT, CRT_OK);
+            if CRT_OK then
+               declare
+                  Y      : Byte_Seq (0 .. N32 (X_Len) - 1) :=
+                    X (0 .. N32 (X_Len) - 1);
+                  Pub_OK : Boolean;
+               begin
+                  RSA_Public (Y, X_Len, Modulus, Mod_Len, Pub_Exp, Pub_OK);
+                  --  Constant-time equality: both operands are public
+                  --  (the signature and the padded message), but the
+                  --  compare runs on the signing path, so no early exit.
+                  declare
+                     Diff : Byte_Seq (0 .. 0) := (0 => 0);
+                  begin
+                     for I in Y'Range loop
+                        Diff (0) := Diff (0) or (Y (I) xor Saved (I));
+                     end loop;
+                     --  This is the one decision on this path that a taint
+                     --  tracker reports: the bit "did the CRT result
+                     --  verify" is public by construction (success => the
+                     --  signature goes out; failure => the caller observes
+                     --  the plain path), but its operands derive from the
+                     --  key. Left as it is, and classified in the ctgrind
+                     --  lane, rather than hidden from the tool.
+                     if Pub_OK and then Diff (0) = 0 then
+                        OK := True;
+                        return;
+                     end if;
+                  end;
+               end;
+            end if;
+            X (0 .. N32 (X_Len) - 1) := Saved;
+         end;
+      end if;
+      RSA_Private (X, X_Len, Modulus, Mod_Len, Exp, Exp_Len, OK);
+   end RSA_Private_Fast;
+
    procedure Sign_PSS
      (M_Hash    : in     Byte_Seq;
       Hash_Len  : in     N32;
@@ -896,7 +1080,9 @@ is
       Salt      : in     Byte_Seq;
       Signature :    out Byte_Seq;
       Sig_Len   :    out N32;
-      OK        :    out Boolean)
+      OK        :    out Boolean;
+      Pub_Exp   : in     Unsigned_32 := 0;
+      CRT       : in     CRT_Params  := No_CRT)
    is
       EM : Byte_Seq (0 .. N32 (Mod_Len) - 1);
    begin
@@ -947,13 +1133,15 @@ is
       declare
          Priv_OK : Boolean;
       begin
-         RSA_Private
+         RSA_Private_Fast
            (X       => EM,
             X_Len   => Natural (Mod_Len),
             Modulus => Modulus,
             Mod_Len => Natural (Mod_Len),
             Exp     => Priv_Exp,
             Exp_Len => Natural (Mod_Len),
+            Pub_Exp => Pub_Exp,
+            CRT     => CRT,
             OK      => Priv_OK);
 
          if not Priv_OK then
@@ -981,7 +1169,9 @@ is
       Priv_Exp  : in     Byte_Seq;
       Signature :    out Byte_Seq;
       Sig_Len   :    out N32;
-      OK        :    out Boolean)
+      OK        :    out Boolean;
+      Pub_Exp   : in     Unsigned_32 := 0;
+      CRT       : in     CRT_Params  := No_CRT)
    is
       EM    : Byte_Seq (0 .. N32 (Mod_Len) - 1);
       T_Len : constant N32 := DI_Len + Hash_Len;
@@ -1021,13 +1211,15 @@ is
       declare
          Priv_OK : Boolean;
       begin
-         RSA_Private
+         RSA_Private_Fast
            (X       => EM,
             X_Len   => Natural (Mod_Len),
             Modulus => Modulus,
             Mod_Len => Natural (Mod_Len),
             Exp     => Priv_Exp,
             Exp_Len => Natural (Mod_Len),
+            Pub_Exp => Pub_Exp,
+            CRT     => CRT,
             OK      => Priv_OK);
 
          if not Priv_OK then
