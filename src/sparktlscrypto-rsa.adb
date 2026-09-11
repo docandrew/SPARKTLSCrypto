@@ -109,10 +109,11 @@ is
       OK      :    out Boolean)
    is
       use BigNat64;
-      M     : Big_Nat;
-      A     : Big_Nat;
-      M0I   : Word;
-      E     : Byte_Seq (0 .. 3) := (others => 0);
+      M       : Big_Nat;
+      A       : Big_Nat;
+      M0I     : Word;
+      E       : Byte_Seq (0 .. 3) := (others => 0);
+      Reduced : Word := 0;   --  1 iff the signature satisfied 0 <= s < n
    begin
       OK := False;
 
@@ -146,6 +147,23 @@ is
             return;
          end if;
 
+         --  RFC 8017 5.2.2 step 1 / RSASSA verify: the signature
+         --  representative s MUST satisfy 0 <= s < n. A non-reduced s
+         --  (s >= n, same word length) exponentiates to the identical
+         --  s^e mod n and would otherwise verify, so it must be rejected
+         --  (Wycheproof rsa_signature "the signature is not reduced",
+         --  flag SignatureMalleability); the 32-bit-limb predecessor
+         --  rejected it, the BigNat64 rewrite dropped it.
+         --
+         --  BRANCHLESS: RSA_Public is also the verify-after-sign step of
+         --  the CRT signer (RSA_Private_Fast), where A is the signature
+         --  derived from the SECRET key, so this must not branch on the
+         --  value. A.Len now equals M.Len; CT_Sub's borrow (Carry) is 1
+         --  iff A < M. Record it and fold it into OK at the end, where
+         --  the caller already makes its (classified) accept/reject
+         --  decision. Modpow still runs, so timing is input-independent.
+         Reduced := CT_Sub (A, M, 1).Carry;
+
          declare
             Result : Big_Nat;
          begin
@@ -171,7 +189,12 @@ is
          X (X'First .. X'First + N32 (X_Len) - 1) := X_Buf;
       end;
 
-      OK := True;
+      --  Accept only if the signature was reduced (Reduced = 1). A
+      --  non-reduced s falls through to OK = False with no data-dependent
+      --  branch; the caller (Verify_PKCS1_v1_5 / Verify_PSS) rejects on
+      --  not OK, and RSA_Private_Fast folds it into the classified
+      --  verify-after-sign decision.
+      OK := Reduced = 1;
    end RSA_Public;
 
    ----------------------------------------------------------------------------
