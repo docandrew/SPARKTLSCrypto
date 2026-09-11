@@ -146,6 +146,19 @@ is
             return;
          end if;
 
+         --  RFC 8017 5.2.2 step 1 / RSASSA verify: the signature
+         --  representative s MUST satisfy 0 <= s < n. A non-reduced s
+         --  (s >= n, same word length) exponentiates to the identical
+         --  s^e mod n and would otherwise verify, so it must be rejected
+         --  (Wycheproof rsa_signature "the signature is not reduced",
+         --  flag SignatureMalleability). A.Len now equals M.Len, so a
+         --  constant-time A - M whose borrow (Carry) is 0 means A >= M.
+         --  The 32-bit-limb predecessor rejected this; the BigNat64
+         --  rewrite dropped the check -- restore it here.
+         if CT_Sub (A, M, 1).Carry = 0 then
+            return;
+         end if;
+
          declare
             Result : Big_Nat;
          begin
