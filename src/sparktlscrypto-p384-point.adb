@@ -18,11 +18,13 @@ is
       16#C6#, 16#56#, 16#39#, 16#8D#, 16#8A#, 16#2E#, 16#D1#, 16#9D#,
       16#2A#, 16#85#, 16#C8#, 16#ED#, 16#D3#, 16#EC#, 16#2A#, 16#EF#);
 
-   function P384_On_Curve (Q : Jacobian) return Boolean
+   --  All-ones when Q (affine, Z = 1 as from Make_Point) satisfies the
+   --  curve equation, all-zeros otherwise; no branch on the data.
+   function P384_On_Curve_Mask (Q : Jacobian) return Word
    with Pre => Q.X.Len = W384 and Q.Y.Len = W384 and Q.Z.Len = W384
                and P.Len = W384;
 
-   function P384_On_Curve (Q : Jacobian) return Boolean is
+   function P384_On_Curve_Mask (Q : Jacobian) return Word is
       B, X2, X3, Y2, T1, T2, T3, T4, T : Big_Nat;
    begin
       Decode (B, P384_B);
@@ -39,8 +41,19 @@ is
       FE_Sub (T3, T2, Q.X);
       FE_Add (T4, T3, B);
       FE_Sub (T, T4, Y2);
-      return FE_Is_Zero (T);
-   end P384_On_Curve;
+      return FE_Zero_Mask (T);
+   end P384_On_Curve_Mask;
+
+   function P384_Public_Key_Valid_Mask
+     (Qx, Qy : Byte_Seq) return SPARKTLSCrypto.BigNat64.Word
+   is
+      Q : Jacobian;
+   begin
+      Make_Point (Q, Qx, Qy);
+      return Coord_Below_P_Mask (Qx)
+             and Coord_Below_P_Mask (Qy)
+             and P384_On_Curve_Mask (Q);
+   end P384_Public_Key_Valid_Mask;
 
    procedure P384_Mulgen
      (PK_Out : out Byte_Seq;
@@ -81,10 +94,12 @@ is
          return;
       end if;
 
-      Make_Point (Q, Peer_PK (1 .. 48), Peer_PK (49 .. 96));
-      if not P384_On_Curve (Q) then
+      --  Range + on-curve check on the peer's key (public data; the
+      --  early return is fine here, ECDHE's secret is SK).
+      if P384_Public_Key_Valid_Mask (Peer_PK (1 .. 48), Peer_PK (49 .. 96)) = 0 then
          return;
       end if;
+      Make_Point (Q, Peer_PK (1 .. 48), Peer_PK (49 .. 96));
 
       Scalar_Mul (Q, SK);
 

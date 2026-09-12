@@ -147,7 +147,6 @@ is
    --    0xFF..F if all words are zero
    --    0x00..0 otherwise
    --  Uses OR-reduction; no branch on the data.
-   function FE_Zero_Mask (V : Big_Nat) return Word;
 
    function FE_Zero_Mask (V : Big_Nat) return Word is
       R : Word := 0;
@@ -390,5 +389,17 @@ is
       Pt.Z.W (0) := 1;
       FE_To_Monty (Pt.Z);
    end Make_Point;
+
+   function Coord_Below_P_Mask (Bytes : Byte_Seq) return Word is
+      Buf   : constant Byte_Seq (0 .. 47) := Bytes;
+      V     : Big_Nat;
+      Trial : Arith_Result;
+   begin
+      Decode (V, Buf);
+      V.Len := W384;
+      Trial := CT_Sub (V, P, 0);
+      --  borrow = 1 exactly when V < p
+      return -Trial.Carry;
+   end Coord_Below_P_Mask;
 
 end SPARKTLSCrypto.P384.Field;

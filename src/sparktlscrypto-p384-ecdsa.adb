@@ -5,6 +5,7 @@
 with Interfaces;           use Interfaces;
 with SPARKTLSCrypto.BigNat64;    use SPARKTLSCrypto.BigNat64;
 with SPARKTLSCrypto.P384.Field;  use SPARKTLSCrypto.P384.Field;
+with SPARKTLSCrypto.P384.Point;
 
 package body SPARKTLSCrypto.P384.ECDSA with
    SPARK_Mode => On
@@ -70,6 +71,10 @@ is
       RX_Bytes : Byte_Seq (0 .. 47);
       RX_Int : Big_Nat;
       One : Big_Nat;
+      --  Public-key validity (SEC 1 3.2.2.1) and "sum is not infinity",
+      --  as an all-ones/all-zeros mask folded into the verdict at the end
+      --  so an invalid Q takes the same path as a valid one.
+      Valid : Word;
    begin
       --  Decode r, s and check they're in [1, n-1]
       Decode (R_Int, R);
@@ -116,11 +121,16 @@ is
          Encode (U2_Bytes, U2);
 
          Make_Generator (G_Pt);
+         Valid := SPARKTLSCrypto.P384.Point.P384_Public_Key_Valid_Mask (Qx, Qy);
          Make_Point (Q_Pt, Qx, Qy);
 
          Scalar_Mul (G_Pt, U1_Bytes);
          Scalar_Mul (Q_Pt, U2_Bytes);
          Point_Add (G_Pt, Q_Pt);
+
+         --  u1*G + u2*Q = O has no x-coordinate: To_Affine would turn
+         --  FE_Inv (0) = 0 into x = 0. Reject through the mask.
+         Valid := Valid and (not FE_Zero_Mask (G_Pt.Z));
 
          To_Affine (G_Pt);
       end;
@@ -133,13 +143,16 @@ is
       Decode (RX_Int, RX_Bytes);
       RX_Int.Len := N.Len;
 
-      --  Reduce mod n: if RX >= N, subtract N
+      --  Reduce mod n: if RX >= N, subtract N. Selected per word rather
+      --  than branched: RX derives from Q, and the verdict's timing must
+      --  not depend on the inputs.
       declare
          Trial : constant Arith_Result := CT_Sub (RX_Int, N, 1);
+         Take  : constant Word := CT_Eq (Trial.Carry, 0);  --  no borrow: RX >= N
       begin
-         if Trial.Carry = 0 then
-            RX_Int := Trial.Value;
-         end if;
+         for I in 0 .. W384 - 1 loop
+            RX_Int.W (I) := CT_Mux (Take, Trial.Value.W (I), RX_Int.W (I));
+         end loop;
       end;
 
       --  Compare RX with R
@@ -149,6 +162,9 @@ is
          for I in 0 .. W384 - 1 loop
             Diff := Diff or (RX_Int.W (I) xor R_Int.W (I));
          end loop;
+         --  Fold the validity mask in: all-ones leaves Diff alone,
+         --  all-zeros forces a mismatch.
+         Diff := Diff or (not Valid);
          return Diff = 0;
       end;
    end Verify;

@@ -557,9 +557,10 @@ is
 
       P256_Muladd_32 (PK_Enc, U2_Bytes, U1_Bytes, OK);
 
-      if OK = 0 then
-         return False;
-      end if;
+      --  OK carries the public-key validation (prefix, x, y < p,
+      --  on-curve) and the not-infinity condition as a 0/1 flag. It is
+      --  folded into the verdict below rather than branched on, so an
+      --  invalid Q takes the same path as a valid one.
 
       --  Check R.x == r (mod n)
       RX := PK_Enc (1 .. 32);
@@ -568,7 +569,7 @@ is
 
       --  Constant-time comparison
       Sub_Scalar (Diff, RX_S, R_S, Borrow);
-      return Is_Zero_Scalar (Diff) and Borrow = 0;
+      return Is_Zero_Scalar (Diff) and Borrow = 0 and OK = 1;
    end Verify;
 
    procedure Test_Mul_Mod_N

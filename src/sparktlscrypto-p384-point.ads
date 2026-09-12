@@ -4,6 +4,7 @@
 --  for key exchange.  Reuses Big_Int infrastructure from RSA.
 
 with SPARKNaCl;                use SPARKNaCl;
+with SPARKTLSCrypto.BigNat64;
 with SPARKTLSCrypto.P384.Field;
 
 package SPARKTLSCrypto.P384.Point with
@@ -30,5 +31,14 @@ is
    with Pre => SK'First = 0 and SK'Length = 48
                and Peer_PK'First = 0 and Peer_PK'Length = 97
                and Field.Initialized;
+
+   --  Public-key validation (SEC 1 3.2.2.1): x < p, y < p and
+   --  y^2 = x^3 - 3x + b. All-ones when valid, all-zeros otherwise,
+   --  computed without branching on the coordinates so ECDSA verify can
+   --  fold it into a constant-time verdict. Rejects the encoding of the
+   --  point at infinity as a side effect (0, 0 is not on the curve).
+   function P384_Public_Key_Valid_Mask
+     (Qx, Qy : Byte_Seq) return SPARKTLSCrypto.BigNat64.Word
+   with Pre => Qx'Length = 48 and Qy'Length = 48 and Field.Initialized;
 
 end SPARKTLSCrypto.P384.Point;
