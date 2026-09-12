@@ -340,6 +340,31 @@ is
    --  Decode uncompressed point (04 || X[32] || Y[32])
    ---------------------------------------------------------------
 
+   --  Prime p, big-endian.
+   P256_P_Bytes : constant Byte_Seq (0 .. 31) :=
+     (16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#00#, 16#00#, 16#00#, 16#01#,
+      16#00#, 16#00#, 16#00#, 16#00#, 16#00#, 16#00#, 16#00#, 16#00#,
+      16#00#, 16#00#, 16#00#, 16#00#, 16#FF#, 16#FF#, 16#FF#, 16#FF#,
+      16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#);
+
+   --  1 when the 32-byte big-endian value is < p, else 0 (SEC 1
+   --  3.2.2.1 range check). Borrow chain from the least significant
+   --  byte; the borrow is the sign bit of the modular difference. No
+   --  branch on the data.
+   function Below_P (Src : Byte_Seq) return U32
+   with Pre => Src'Length = 32
+   is
+      Buf    : constant Byte_Seq (0 .. 31) := Src;
+      Borrow : U32 := 0;
+      D      : U32;
+   begin
+      for I in reverse Buf'Range loop
+         D := U32 (Buf (I)) - U32 (P256_P_Bytes (I)) - Borrow;
+         Borrow := D / 16#8000_0000#;
+      end loop;
+      return Borrow;
+   end Below_P;
+
    procedure P256_Decode
      (P     :    out P256_Jacobian;
       Src   : in     Byte_Seq;
@@ -349,6 +374,9 @@ is
       Bad   : U32;
    begin
       Bad := CT_NEQ (U32 (Src (0)), 16#04#);
+
+      --  Coordinates must be canonical: x, y < p.
+      Bad := Bad or (1 - Below_P (Src (1 .. 32))) or (1 - Below_P (Src (33 .. 64)));
 
       Bytes_To_FE (TX, Src (1 .. 32));
       Bytes_To_FE (TY, Src (33 .. 64));

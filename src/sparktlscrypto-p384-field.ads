@@ -90,6 +90,17 @@ is
         Post => D.Len = W384;
    function  FE_Is_Zero (A : Big_Nat) return Boolean;
 
+   --  All-ones when V = 0, all-zeros otherwise: OR-reduction, no branch
+   --  on the data. The mask form of FE_Is_Zero, for callers that fold a
+   --  zero test into a constant-time verdict.
+   function  FE_Zero_Mask (V : Big_Nat) return Word;
+
+   --  All-ones when the 48-byte big-endian value is < p, all-zeros
+   --  otherwise (SEC 1 3.2.2.1 coordinate range check). Uses the CT_Sub
+   --  borrow; no branch on the data.
+   function  Coord_Below_P_Mask (Bytes : Byte_Seq) return Word
+   with Pre => Bytes'Length = 48 and P.Len = W384;
+
    --  Point operations (all require/preserve Len = W384)
    procedure Point_Double (Q : in out Jacobian)
    with Pre  => Q.X.Len = W384 and Q.Y.Len = W384 and Q.Z.Len = W384
