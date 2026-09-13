@@ -20,6 +20,12 @@ is
                and M'First = 0;
 
    --  Verify a signed message. If valid, M(0..Msg_Len-1) holds the message.
+   --  Acceptance policy (RFC 8032 5.1.7, TweetNaCl semantics): S < L and a
+   --  canonical R are required; a NON-canonical encoding of the public key
+   --  A (y >= p) is accepted, as in TweetNaCl/ref10. This is not the
+   --  strict/cofactorless verification of FIPS 186-5 -- callers that need
+   --  signature uniqueness across encodings must reject non-canonical A
+   --  themselves (TLS certificate keys are canonical by construction).
    procedure Open
      (M       :    out Byte_Seq;
       Valid   :    out Boolean;
