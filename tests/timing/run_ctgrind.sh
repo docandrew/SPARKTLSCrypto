@@ -117,6 +117,7 @@ run_one ct_aead_decrypt      clean || fail=1
 run_one ct_rfc6979           clean || fail=1
 run_one ct_hmac              clean || fail=1
 run_one ct_rsa_sign_plain    clean || fail=1
+run_one ct_rsa_verify        clean || fail=1
 #  ct_rsa_sign_crt: exactly THREE classified sites, all one decision --
 #  the verify-after-sign check in RSA_Private_Fast (a constant-time
 #  compare of two PUBLIC outputs, signature and padded message, whose

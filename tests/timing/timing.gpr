@@ -18,6 +18,7 @@ project Timing is
                  "ct_p384_ecdsa.adb",
                  "ct_p384_ecdsa_verify.adb",
                  "ct_p256_ecdsa_verify.adb",
+                 "ct_rsa_verify.adb",
                  "ct_hkdf.adb",
                  "ct_aes_gcm.adb",
                  "ct_aead_decrypt.adb",

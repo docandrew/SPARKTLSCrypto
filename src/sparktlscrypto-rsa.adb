@@ -20,7 +20,15 @@ is
       Modulus : in     Byte_Seq;
       Mod_Len : in     Natural;
       Exp     : in     Unsigned_32;
-      OK      :    out Boolean)
+      --  OK: every check passed, INCLUDING 0 <= s < n (the CRT signer's
+      --  verify-after-sign consumes this one bit). Structural_OK: the
+      --  public checks alone (lengths, odd modulus, exponent), so a
+      --  verifier can branch on it without branching on the signature.
+      --  Reduced_Mask: all-ones iff 0 <= s < n, computed without a branch,
+      --  for the verifiers to fold into their accept/reject accumulator.
+      OK            :    out Boolean;
+      Structural_OK :    out Boolean;
+      Reduced_Mask  :    out SPARKTLSCrypto.BigNat64.Word)
    with Always_Terminates,
         Pre => X'First = 0 and X'Last < N32'Last
                and Modulus'First = 0 and Modulus'Last < N32'Last
@@ -35,6 +43,8 @@ is
       Hash_Len : in     Natural;
       Hash_Alg : in     PSS_Hash;
       N_Bitlen : in     Natural;
+      --  Non-zero forces Valid = False (the caller's s < n verdict).
+      Fail_Mask : in    Unsigned_32;
       Valid    :    out Boolean)
    with Always_Terminates,
         Pre => N_Bitlen >= 2 and N_Bitlen <= Max_RSA_Bits
@@ -106,7 +116,15 @@ is
       Modulus : in     Byte_Seq;
       Mod_Len : in     Natural;
       Exp     : in     Unsigned_32;
-      OK      :    out Boolean)
+      --  OK: every check passed, INCLUDING 0 <= s < n (the CRT signer's
+      --  verify-after-sign consumes this one bit). Structural_OK: the
+      --  public checks alone (lengths, odd modulus, exponent), so a
+      --  verifier can branch on it without branching on the signature.
+      --  Reduced_Mask: all-ones iff 0 <= s < n, computed without a branch,
+      --  for the verifiers to fold into their accept/reject accumulator.
+      OK            :    out Boolean;
+      Structural_OK :    out Boolean;
+      Reduced_Mask  :    out SPARKTLSCrypto.BigNat64.Word)
    is
       use BigNat64;
       M       : Big_Nat;
@@ -116,6 +134,8 @@ is
       Reduced : Word := 0;   --  1 iff the signature satisfied 0 <= s < n
    begin
       OK := False;
+      Structural_OK := False;
+      Reduced_Mask := 0;
 
       if Mod_Len = 0 or else X_Len /= Mod_Len
          or else Mod_Len > Max_RSA_Bytes
@@ -200,9 +220,13 @@ is
 
       --  Accept only if the signature was reduced (Reduced = 1). A
       --  non-reduced s falls through to OK = False with no data-dependent
-      --  branch; the caller (Verify_PKCS1_v1_5 / Verify_PSS) rejects on
-      --  not OK, and RSA_Private_Fast folds it into the classified
+      --  branch. The verifiers (Verify_PKCS1_v1_5 / Verify_PSS) do NOT
+      --  branch on OK -- that would be a branch on the signature -- they
+      --  test Structural_OK and OR (not Reduced_Mask) into their
+      --  accumulator; RSA_Private_Fast folds OK into its classified
       --  verify-after-sign decision.
+      Structural_OK := True;
+      Reduced_Mask := -Reduced;
       OK := Reduced = 1;
    end RSA_Public;
 
@@ -328,6 +352,8 @@ is
       Hash_Len : in     Natural;
       Hash_Alg : in     PSS_Hash;
       N_Bitlen : in     Natural;
+      --  Non-zero forces Valid = False (the caller's s < n verdict).
+      Fail_Mask : in    Unsigned_32;
       Valid    :    out Boolean)
    is
       Salt_Len  : constant Natural := Hash_Len;
@@ -459,6 +485,7 @@ is
          end;
       end;
 
+      R := R or Fail_Mask;
       Valid := CT_Eq0 (R) = 1;
    end PSS_Verify;
 
@@ -476,20 +503,26 @@ is
       Signature : in Byte_Seq;
       Sig_Len   : in N32) return Boolean
    is
-      X  : Byte_Seq (0 .. N32 (Sig_Len) - 1);
-      OK : Boolean;
+      X       : Byte_Seq (0 .. N32 (Sig_Len) - 1);
+      OK      : Boolean;
+      Str_OK  : Boolean;
+      Reduced : BigNat64.Word;
    begin
       X := Signature (Signature'First .. Signature'First + N32 (Sig_Len) - 1);
 
       RSA_Public
-        (X       => X,
-         X_Len   => Natural (Sig_Len),
-         Modulus => Modulus,
-         Mod_Len => Natural (Mod_Len),
-         Exp     => Exponent,
-         OK      => OK);
+        (X             => X,
+         X_Len         => Natural (Sig_Len),
+         Modulus       => Modulus,
+         Mod_Len       => Natural (Mod_Len),
+         Exp           => Exponent,
+         OK            => OK,
+         Structural_OK => Str_OK,
+         Reduced_Mask  => Reduced);
 
-      if not OK then
+      --  Public inputs only; s < n is folded into PSS_Verify's verdict
+      --  below rather than branched on here (ct_rsa_verify).
+      if not Str_OK then
          return False;
       end if;
 
@@ -522,6 +555,7 @@ is
             Hash_Len => Natural (Hash_Len),
             Hash_Alg => Hash_Alg,
             N_Bitlen => N_Bitlen,
+            Fail_Mask => Unsigned_32 ((not Reduced) and 16#FFFF_FFFF#),
             Valid    => PSS_OK);
 
          return PSS_OK;
@@ -634,20 +668,27 @@ is
       OK   : Boolean;
       T_Len : constant N32 := DI_Len + Hash_Len;
       Diff  : Byte := 0;
+      Str_OK  : Boolean;
+      Reduced : BigNat64.Word;
    begin
       X := Signature (Signature'First .. Signature'First + N32 (Sig_Len) - 1);
 
       RSA_Public
-        (X       => X,
-         X_Len   => Natural (Sig_Len),
-         Modulus => Modulus,
-         Mod_Len => Natural (Mod_Len),
-         Exp     => Exponent,
-         OK      => OK);
+        (X             => X,
+         X_Len         => Natural (Sig_Len),
+         Modulus       => Modulus,
+         Mod_Len       => Natural (Mod_Len),
+         Exp           => Exponent,
+         OK            => OK,
+         Structural_OK => Str_OK,
+         Reduced_Mask  => Reduced);
 
-      if not OK then
+      --  Public inputs only; s < n is folded into Diff below rather than
+      --  branched on here (ct_rsa_verify).
+      if not Str_OK then
          return False;
       end if;
+      Diff := Diff or Byte ((not Reduced) and 16#FF#);
 
       --  Need room for: 0x00 || 0x01 || PS(>=8) || 0x00 || T
       --  i.e. EM_Len >= 11 + T_Len.
@@ -1101,8 +1142,10 @@ is
                   Y      : Byte_Seq (0 .. N32 (X_Len) - 1) :=
                     X (0 .. N32 (X_Len) - 1);
                   Pub_OK : Boolean;
+                  Pub_Str : Boolean;
+                  Pub_Red : BigNat64.Word;
                begin
-                  RSA_Public (Y, X_Len, Modulus, Mod_Len, Pub_Exp, Pub_OK);
+                  RSA_Public (Y, X_Len, Modulus, Mod_Len, Pub_Exp, Pub_OK, Pub_Str, Pub_Red);
                   --  Constant-time equality: both operands are public
                   --  (the signature and the padded message), but the
                   --  compare runs on the signing path, so no early exit.
