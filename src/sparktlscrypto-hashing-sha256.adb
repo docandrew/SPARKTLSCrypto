@@ -42,6 +42,18 @@ is
       if EAX < 7 then
          return False;
       end if;
+      --  The block function also uses palignr / pshufb (SSSE3, leaf 1
+      --  ECX bit 9) and pblendw (SSE4.1, ECX bit 19).
+      Asm ("cpuid",
+           Outputs  => (Unsigned_32'Asm_Output ("=a", EAX),
+                        Unsigned_32'Asm_Output ("=b", EBX),
+                        Unsigned_32'Asm_Output ("=c", ECX),
+                        Unsigned_32'Asm_Output ("=d", EDX)),
+           Inputs   => Unsigned_32'Asm_Input ("a", 1),
+           Volatile => True);
+      if (ECX and 16#0000_0200#) = 0 or else (ECX and 16#0008_0000#) = 0 then
+         return False;
+      end if;
       Asm ("cpuid",
            Outputs  => (Unsigned_32'Asm_Output ("=a", EAX),
                         Unsigned_32'Asm_Output ("=b", EBX),

@@ -28,8 +28,12 @@ is
            Inputs   => Unsigned_32'Asm_Input ("a", 1),
            Volatile => True);
       pragma Unreferenced (EAX, EBX, EDX);
-      --  CPUID.01h: ECX bit 25 = AES-NI
-      return (ECX and 16#0200_0000#) /= 0;
+      --  CPUID.01h: ECX bit 25 = AES-NI. The kernels also use pshufb
+      --  (SSSE3, bit 9) and pclmulqdq (bit 1); gate on those too rather
+      --  than assume they travel with AES-NI.
+      return (ECX and 16#0200_0000#) /= 0
+         and (ECX and 16#0000_0200#) /= 0
+         and (ECX and 16#0000_0002#) /= 0;
    end Detect_AES_NI;
 
    ----------------------------------------------------------------------------

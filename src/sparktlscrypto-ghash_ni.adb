@@ -46,8 +46,10 @@ is
            Inputs   => Unsigned_32'Asm_Input ("a", 1),
            Volatile => True);
       pragma Unreferenced (EAX, EBX, EDX);
-      --  CPUID.01h: ECX bit 1 = PCLMULQDQ
-      return (ECX and 16#0000_0002#) /= 0;
+      --  CPUID.01h: ECX bit 1 = PCLMULQDQ; the byte-swap uses pshufb
+      --  (SSSE3, bit 9).
+      return (ECX and 16#0000_0002#) /= 0
+         and (ECX and 16#0000_0200#) /= 0;
    end Detect_PCLMULQDQ;
 
    ----------------------------------------------------------------------------

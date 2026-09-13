@@ -145,7 +145,13 @@ is
                            Unsigned_32'Asm_Input ("c", 0)),
               Volatile => True);
          pragma Unreferenced (EAX, EDX);
+         --  The kernel also uses vbroadcasti64x2 / vinserti64x2 (AVX512DQ)
+         --  and vpshufb on zmm (AVX512BW); a part with F+VAES+VPCLMULQDQ
+         --  but not DQ/BW (Knights-class, or a hypervisor mask) would #UD
+         --  on the first of them.
          return (EBX and 16#0001_0000#) /= 0   -- AVX-512F
+            and (EBX and 16#0002_0000#) /= 0   -- AVX512DQ
+            and (EBX and 16#4000_0000#) /= 0   -- AVX512BW
             and (ECX and 16#0000_0200#) /= 0   -- VAES
             and (ECX and 16#0000_0400#) /= 0;  -- VPCLMULQDQ
       end;
