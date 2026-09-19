@@ -1,4 +1,3 @@
-with Ada.Text_IO; use Ada.Text_IO;
 with Interfaces; use Interfaces;
 
 package body SPARKTLSCrypto.Base64 
@@ -263,7 +262,6 @@ is
          Result (Result'Last) := '=';
       end if;
 
-      -- Put_Line ("Result: " & To_String (Result));
       return Result;
    end Encode;
 

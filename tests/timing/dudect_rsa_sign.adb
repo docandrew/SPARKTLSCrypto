@@ -6,6 +6,7 @@ with Dudect_Helpers;
 --  Statistical timing: RSA-2048 PSS CRT signing with two different valid
 --  keys of the same size. A constant-time signer shows no difference.
 procedure Dudect_RSA_Sign is
+   Blind : constant Bytes_16 := (others => 16#42#);
    A_N : constant Byte_Seq (0 .. 255) :=
      (
       16#AB#, 16#38#, 16#CC#, 16#55#, 16#C2#, 16#D2#, 16#20#, 16#EA#, 16#8B#, 16#AB#, 16#20#, 16#6C#,
@@ -243,14 +244,14 @@ procedure Dudect_RSA_Sign is
       SPARKTLSCrypto.RSA.Sign_PSS
         (M_Hash => Byte_Seq (Hash), Hash_Len => 32, Hash_Alg => SPARKTLSCrypto.RSA.PSS_SHA256,
          Modulus => A_N, Mod_Len => 256, Priv_Exp => A_D, Salt => Byte_Seq (Salt),
-         Signature => Sig, Sig_Len => L, OK => OK, Pub_Exp => 65537, CRT => CA);
+         Signature => Sig, Sig_Len => L, OK => OK, Blind => Blind, Pub_Exp => 65537, CRT => CA);
    end Sub_0;
    procedure Sub_1 is
    begin
       SPARKTLSCrypto.RSA.Sign_PSS
         (M_Hash => Byte_Seq (Hash), Hash_Len => 32, Hash_Alg => SPARKTLSCrypto.RSA.PSS_SHA256,
          Modulus => B_N, Mod_Len => 256, Priv_Exp => B_D, Salt => Byte_Seq (Salt),
-         Signature => Sig, Sig_Len => L, OK => OK, Pub_Exp => 65537, CRT => CB);
+         Signature => Sig, Sig_Len => L, OK => OK, Blind => Blind, Pub_Exp => 65537, CRT => CB);
    end Sub_1;
 begin
    CA := (Valid => True, Prime_Len => 128, others => <>);

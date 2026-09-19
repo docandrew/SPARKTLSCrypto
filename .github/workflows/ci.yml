@@ -28,6 +28,10 @@ jobs:
 
       - name: Build and smoke test
         run: nix develop --command bash ci/check.sh
+      - name: Differential fuzz (tiers vs proven SPARK, 60 s)
+        run: nix develop --command bash ci/fuzz.sh 60
+      - name: Instruction-set gate (DOIT allowlists)
+        run: nix develop --command bash ci/mnemonics.sh
 
   ctgrind:
     env:

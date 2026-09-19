@@ -8,6 +8,8 @@
 --  The SSA form is preserved for performance (optimal register allocation).
 
 with Interfaces; use Interfaces;
+with SPARKTLSCrypto.CPU;
+with SPARKTLSCrypto.BigNat64_ADX;
 
 package body SPARKTLSCrypto.Fiat_P256 with
    SPARK_Mode => On
@@ -34,11 +36,18 @@ is
       Arg3 :     Unsigned_64)
    with Inline
    is
-      X : constant Unsigned_128 :=
-         Unsigned_128 (Arg1) + Unsigned_128 (Arg2) + Unsigned_128 (Arg3);
+      --  64-bit formulation: two wrapping adds, each carry read back
+      --  as a compare. GCC turns this into an add/adc pair, where the
+      --  Unsigned_128 form produced zero-extend and 128-bit add
+      --  sequences with extra moves. Arg1 is the 0/1 carry-in, so the
+      --  two partial carries cannot both be 1.
+      S1 : constant Unsigned_64 := Arg2 + Arg3;
+      C1 : constant Unsigned_64 := Boolean'Pos (S1 < Arg2);
+      S2 : constant Unsigned_64 := S1 + Arg1;
+      C2 : constant Unsigned_64 := Boolean'Pos (S2 < S1);
    begin
-      Out1 := Unsigned_64 (X and 16#FFFF_FFFF_FFFF_FFFF#);
-      Out2 := Unsigned_64 (Shift_Right (X, 64));
+      Out1 := S2;
+      Out2 := C1 + C2;
    end Addcarryx_U64;
 
    procedure Subborrowx_U64
@@ -49,11 +58,15 @@ is
       Arg3 :     Unsigned_64)
    with Inline
    is
-      X : constant Unsigned_128 :=
-         Unsigned_128 (Arg2) - Unsigned_128 (Arg1) - Unsigned_128 (Arg3);
+      --  Same 64-bit formulation for the borrow chain: Arg2 - Arg3 -
+      --  Arg1 with Arg1 the 0/1 borrow-in.
+      D1 : constant Unsigned_64 := Arg2 - Arg3;
+      B1 : constant Unsigned_64 := Boolean'Pos (Arg2 < Arg3);
+      D2 : constant Unsigned_64 := D1 - Arg1;
+      B2 : constant Unsigned_64 := Boolean'Pos (D1 < Arg1);
    begin
-      Out1 := Unsigned_64 (X and 16#FFFF_FFFF_FFFF_FFFF#);
-      Out2 := Unsigned_64 (Shift_Right (X, 64)) and 1;
+      Out1 := D2;
+      Out2 := B1 + B2;
    end Subborrowx_U64;
 
    procedure Mulx_U64
@@ -85,7 +98,7 @@ is
    Mask64 : constant Unsigned_128 := 16#FFFF_FFFF_FFFF_FFFF#;
 
 
-function Mul (Arg1, Arg2 : FE) return FE is
+function Mul_Portable (Arg1, Arg2 : FE) return FE is
    Out1 : FE;
    x1, x2, x3, x4, x5, x6, x7, x8          : Unsigned_64;
    x9, x10, x11, x12, x13, x14, x15, x16    : Unsigned_64;
@@ -236,9 +249,9 @@ begin
 
    Out1 := (x184, x185, x186, x187);
    return Out1;
-end Mul;
+end Mul_Portable;
 
-function Sqr (Arg1 : FE) return FE is
+function Sqr_Portable (Arg1 : FE) return FE is
    Out1 : FE;
    x1, x2, x3, x4, x5, x6, x7, x8             : Unsigned_64;
    x9, x10, x11, x12, x13, x14, x15, x16       : Unsigned_64;
@@ -407,7 +420,37 @@ begin
 
    Out1 := (x184, x185, x186, x187);
    return Out1;
-end Sqr;
+end Sqr_Portable;
+
+   --  Dispatchers. The tier flag is fixed at elaboration, so the branch
+   --  is not data dependent.
+   function Mul (Arg1, Arg2 : FE) return FE is
+   begin
+      if SPARKTLSCrypto.CPU.Has_BMI2_ADX then
+         declare
+            R : FE;
+         begin
+            SPARKTLSCrypto.BigNat64_ADX.Mont_Mul_P256 (R, Arg1, Arg2);
+            return R;
+         end;
+      else
+         return Mul_Portable (Arg1, Arg2);
+      end if;
+   end Mul;
+
+   function Sqr (Arg1 : FE) return FE is
+   begin
+      if SPARKTLSCrypto.CPU.Has_BMI2_ADX then
+         declare
+            R : FE;
+         begin
+            SPARKTLSCrypto.BigNat64_ADX.Mont_Mul_P256 (R, Arg1, Arg1);
+            return R;
+         end;
+      else
+         return Sqr_Portable (Arg1);
+      end if;
+   end Sqr;
 
    --  add: out1 := arg1 + arg2 mod p
    function Add (Arg1, Arg2 : FE) return FE is

@@ -1,0 +1,10 @@
+name = "sparktlscrypto_fuzz"
+version = "0.0.0"
+description = "Differential fuzzing: accelerated tiers vs proven SPARK code"
+project-files = ["fuzz.gpr"]
+
+[[depends-on]]
+sparktlscrypto = "*"
+
+[[pins]]
+sparktlscrypto = { path = "../.." }

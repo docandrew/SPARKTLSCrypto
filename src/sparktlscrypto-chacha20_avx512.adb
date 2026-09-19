@@ -10,6 +10,8 @@
 --  zmm0..zmm15, so the upper bank is free).
 
 with System.Machine_Code; use System.Machine_Code;
+with SPARKTLSCrypto.CPU;
+pragma Elaborate_All (SPARKTLSCrypto.CPU);
 with Interfaces;          use Interfaces;
 with SPARKNaCl;           use SPARKNaCl;
 
@@ -451,5 +453,5 @@ is
    end Encrypt_1024_InPlace;
 
 begin
-   Has_AVX512_ChaCha20 := Detect_AVX512F;
+   Has_AVX512_ChaCha20 := (not SPARKTLSCrypto.CPU.Portable_Only) and then Detect_AVX512F;
 end SPARKTLSCrypto.ChaCha20_AVX512;

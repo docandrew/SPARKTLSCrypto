@@ -223,6 +223,13 @@ is
    --  Pub_Exp   : public exponent e; with CRT, enables the verify-after-
    --              sign check (0 = plain path)
    --  CRT       : optional CRT private key (see CRT_Params)
+   --  Blind (both signing entries): 16 fresh random bytes from the
+   --  caller's CSPRNG (SR-61). With CRT parameters the two private
+   --  exponents are used as dP + k1 (p - 1) and dQ + k2 (q - 1), k1 and
+   --  k2 being the two 64-bit halves of Blind, so the exponent bits walked
+   --  differ on every signature while the result is unchanged. Without
+   --  CRT parameters (no p, q) the plain exponent cannot be blinded and
+   --  Blind is unused. The result never depends on Blind.
    procedure Sign_PSS
      (M_Hash    : in     Byte_Seq;
       Hash_Len  : in     N32;
@@ -234,6 +241,7 @@ is
       Signature :    out Byte_Seq;
       Sig_Len   :    out N32;
       OK        :    out Boolean;
+      Blind     : in     Bytes_16;
       Pub_Exp   : in     Unsigned_32 := 0;
       CRT       : in     CRT_Params  := No_CRT)
    with Pre => Mod_Len >= 64 and then Mod_Len <= Max_RSA_Bytes
@@ -270,6 +278,7 @@ is
       Signature :    out Byte_Seq;
       Sig_Len   :    out N32;
       OK        :    out Boolean;
+      Blind     : in     Bytes_16;
       Pub_Exp   : in     Unsigned_32 := 0;
       CRT       : in     CRT_Params  := No_CRT)
    with Pre => Mod_Len >= 64 and then Mod_Len <= Max_RSA_Bytes

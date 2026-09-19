@@ -30,8 +30,14 @@ is
    --  Functions to avoid SPARK aliasing issues.
    ----------------------------------------------------------------
 
+   --  Mul and Sqr dispatch to the BMI2/ADX Montgomery tier
+   --  (SPARKTLSCrypto.BigNat64_ADX.Mont_Mul_P256) when the CPU has it,
+   --  otherwise to the Fiat-Crypto code in Mul_Portable / Sqr_Portable.
+   --  Same result either way for inputs below p.
    function Mul (Arg1, Arg2 : FE) return FE with Inline;
    function Sqr (Arg1 : FE) return FE with Inline;
+   function Mul_Portable (Arg1, Arg2 : FE) return FE with Inline;
+   function Sqr_Portable (Arg1 : FE) return FE with Inline;
    function Add (Arg1, Arg2 : FE) return FE with Inline;
    function Sub (Arg1, Arg2 : FE) return FE with Inline;
    function Opp (Arg1 : FE) return FE with Inline;

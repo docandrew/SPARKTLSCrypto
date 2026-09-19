@@ -1,0 +1,10 @@
+name = "sparktlscrypto_bench"
+version = "0.0.0"
+description = "Cycle counts for the SPARKTLSCrypto public-key primitives"
+project-files = ["bench.gpr"]
+
+[[depends-on]]
+sparktlscrypto = "*"
+
+[[pins]]
+sparktlscrypto = { path = "../.." }

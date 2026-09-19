@@ -25,6 +25,8 @@
 --  match OpenSSL on TLS_CHACHA20_POLY1305_SHA256).
 
 with System.Machine_Code; use System.Machine_Code;
+with SPARKTLSCrypto.CPU;
+pragma Elaborate_All (SPARKTLSCrypto.CPU);
 with Interfaces;          use Interfaces;
 with SPARKNaCl.MAC;
 with SPARKTLSCrypto.Poly1305;
@@ -101,8 +103,14 @@ is
                            Unsigned_32'Asm_Input ("c", 0)),
               Volatile => True);
          pragma Unreferenced (EAX, ECX, EDX);
-         F    := (EBX and 16#0001_0000#) /= 0;  --  AVX-512F bit 16
-         IFMA := (EBX and 16#0020_0000#) /= 0;  --  AVX-512_IFMA bit 21
+         --  The kernel uses xmm16-31 register encodings (AVX512VL) and
+         --  byte/word zmm moves (AVX512BW), not just AVX-512F. A part with F
+         --  but not VL/BW (Knights-class, or a hypervisor mask) would #UD,
+         --  so all three are required. Same rule as Detect_AVX512_AES_GCM.
+         F    := (EBX and 16#0001_0000#) /= 0     --  AVX-512F  bit 16
+                 and (EBX and 16#4000_0000#) /= 0  --  AVX512BW  bit 30
+                 and (EBX and 16#8000_0000#) /= 0; --  AVX512VL  bit 31
+         IFMA := (EBX and 16#0020_0000#) /= 0;    --  AVX-512_IFMA bit 21
       end;
    end Detect_AVX512_Poly1305;
 
@@ -741,4 +749,8 @@ is
 
 begin
    Detect_AVX512_Poly1305 (Has_AVX512_Poly1305, Has_AVX512_IFMA);
+   if SPARKTLSCrypto.CPU.Portable_Only then
+      Has_AVX512_Poly1305 := False;
+      Has_AVX512_IFMA     := False;
+   end if;
 end SPARKTLSCrypto.Poly1305_AVX512;

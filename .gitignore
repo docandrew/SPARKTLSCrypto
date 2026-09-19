@@ -17,3 +17,7 @@ tests/timing/obj/
 *.stderr
 *.stdout
 *.bak
+tests/bench/bin/
+tests/bench/obj/
+tests/bench/alire/
+tests/bench/config/

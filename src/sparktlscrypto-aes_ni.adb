@@ -5,6 +5,8 @@
 --  body. Functional equivalence is verified via NIST KAT vectors.
 
 with System.Machine_Code; use System.Machine_Code;
+with SPARKTLSCrypto.CPU;
+pragma Elaborate_All (SPARKTLSCrypto.CPU);
 with Interfaces;          use Interfaces;
 with SPARKNaCl;           use SPARKNaCl;
 with SPARKNaCl.AES;
@@ -1730,5 +1732,5 @@ is
    end Build_Ctr_Block_4;
 
 begin
-   Has_AESNI := Detect_AES_NI;
+   Has_AESNI := (not SPARKTLSCrypto.CPU.Portable_Only) and then Detect_AES_NI;
 end SPARKTLSCrypto.AES_NI;

@@ -24,6 +24,10 @@ is
    --  NIST SP 800-38D §6.2 byte ordering (byte 0 holds the low-degree
    --  coefficients).
    function GF128_Mul (X : Bytes_16; Y : Bytes_16) return Bytes_16;
+
+   --  The portable multiply alone (the dispatcher's fallback), visible so
+   --  the differential fuzzer can compare the PCLMULQDQ tier against it.
+   function SW_GF128_Mul (X : Bytes_16; Y : Bytes_16) return Bytes_16;
    pragma Inline (GF128_Mul);
 
 end SPARKTLSCrypto.GHASH_Dispatch;

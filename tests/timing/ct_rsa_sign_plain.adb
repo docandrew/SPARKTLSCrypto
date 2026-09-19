@@ -8,6 +8,7 @@ with Ctgrind;
 
 --  RSA-2048 PSS signing through the plain-d path (no CRT), d poisoned.
 procedure Ct_RSA_Sign_Plain is
+   Blind : constant Bytes_16 := (others => 16#42#);
    K_N : constant Byte_Seq (0 .. 255) :=
      (
       16#AB#, 16#38#, 16#CC#, 16#55#, 16#C2#, 16#D2#, 16#20#, 16#EA#, 16#8B#, 16#AB#, 16#20#, 16#6C#,
@@ -68,7 +69,8 @@ begin
      (M_Hash => Byte_Seq (Hash), Hash_Len => 32,
       Hash_Alg => SPARKTLSCrypto.RSA.PSS_SHA256,
       Modulus => K_N, Mod_Len => 256, Priv_Exp => D,
-      Salt => Byte_Seq (Salt), Signature => Sig, Sig_Len => Sig_Len, OK => OK);
+      Salt => Byte_Seq (Salt), Signature => Sig, Sig_Len => Sig_Len, OK => OK,
+      Blind => Blind);
    Ctgrind.Make_Defined (Sig'Address, Interfaces.C.size_t (Sig'Length));
    Ctgrind.Use_Output (Sig'Address, Interfaces.C.size_t (Sig'Length));
    Put_Line ("ct_rsa_sign_plain: Sign_PSS completed (OK=" & OK'Image & ")");

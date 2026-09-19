@@ -1,5 +1,22 @@
 {
   "nodes": {
+    "hacl-star": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1775835684,
+        "narHash": "sha256-21K3DE3Bogk8q4315NjRP+jcIxxZktyqhaUQDXFfwAQ=",
+        "owner": "hacl-star",
+        "repo": "hacl-star",
+        "rev": "504c2987452f87fe44bce9b9f12e19d6e051761f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "hacl-star",
+        "repo": "hacl-star",
+        "rev": "504c2987452f87fe44bce9b9f12e19d6e051761f",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1780243769,
@@ -18,6 +35,7 @@
     },
     "root": {
       "inputs": {
+        "hacl-star": "hacl-star",
         "nixpkgs": "nixpkgs"
       }
     }

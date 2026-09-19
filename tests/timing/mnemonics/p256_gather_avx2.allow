@@ -1,0 +1,14 @@
+add
+dec
+jne
+mov
+ret
+vmovdqu
+vmovq
+vpaddq
+vpand
+vpbroadcastq
+vpcmpeqq
+vpor
+vpxor
+vzeroupper
