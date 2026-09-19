@@ -13,6 +13,7 @@ with Ctgrind;
 --  (big-endian, left-padded to 256/128 bytes). The keys exist only in
 --  this test source and protect nothing.
 procedure Ct_RSA_Sign_Plain is
+   Blind : constant Bytes_16 := (others => 16#42#);
    K_N : constant Byte_Seq (0 .. 255) :=
      (
       16#AF#, 16#E1#, 16#93#, 16#8C#, 16#CD#, 16#80#, 16#C4#, 16#BC#, 16#60#, 16#22#, 16#0B#, 16#9A#,
@@ -73,7 +74,8 @@ begin
      (M_Hash => Byte_Seq (Hash), Hash_Len => 32,
       Hash_Alg => SPARKTLSCrypto.RSA.PSS_SHA256,
       Modulus => K_N, Mod_Len => 256, Priv_Exp => D,
-      Salt => Byte_Seq (Salt), Signature => Sig, Sig_Len => Sig_Len, OK => OK);
+      Salt => Byte_Seq (Salt), Signature => Sig, Sig_Len => Sig_Len, OK => OK,
+      Blind => Blind);
    Ctgrind.Make_Defined (Sig'Address, Interfaces.C.size_t (Sig'Length));
    Ctgrind.Use_Output (Sig'Address, Interfaces.C.size_t (Sig'Length));
    Put_Line ("ct_rsa_sign_plain: Sign_PSS completed (OK=" & OK'Image & ")");

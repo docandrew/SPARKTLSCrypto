@@ -1014,6 +1014,7 @@ is
       Modulus : in     Byte_Seq;
       Mod_Len : in     Natural;
       CRT     : in     CRT_Params;
+      Blind   : in     Bytes_16;
       OK      :    out Boolean)
    with Pre => X'First = 0 and X'Last < N32'Last
                and Modulus'First = 0 and Modulus'Last < N32'Last
@@ -1044,6 +1045,10 @@ is
       Res : Big_Nat;
       P0I : Word;
       Q0I : Word;
+      --  Exponent blinding (SR-61): dP + k1 (p - 1), dQ + k2 (q - 1), each
+      --  one word longer than the prime, encoded big-endian for Modpow.
+      One, PM1, QM1, K1, K2, DPB, DQB, DPX, DQX : Big_Nat;
+      EP, EQ : Byte_Seq (0 .. Max_RSA_Prime_Bytes + 7) := (others => 0);
    begin
       OK := False;
 
@@ -1084,8 +1089,39 @@ is
       Mod_Reduce (XQ, XN, Q, Q0I, R2Q);
 
       --  m1 = (x mod p)^dP mod p ; m2 = (x mod q)^dQ mod q
-      Modpow_Top (MP, XP, CRT.DP (0 .. PL - 1), P, P0I);
-      Modpow_Top (MQ, XQ, CRT.DQ (0 .. PL - 1), Q, Q0I);
+      Zero (One, P.Len);
+      One.W (0) := 1;
+      PM1 := CT_Sub (P, One, 1).Value;   --  p odd: no borrow
+      QM1 := CT_Sub (Q, One, 1).Value;
+      Zero (K1, P.Len);
+      Zero (K2, P.Len);
+      for I in 0 .. 7 loop
+         K1.W (0) := K1.W (0) or
+           Shift_Left (Unsigned_64 (Blind (N32 (7 - I))), 8 * I);
+         K2.W (0) := K2.W (0) or
+           Shift_Left (Unsigned_64 (Blind (N32 (15 - I))), 8 * I);
+      end loop;
+      Decode (DPB, CRT.DP (0 .. PL - 1));
+      Decode (DQB, CRT.DQ (0 .. PL - 1));
+      if DPB.Len /= P.Len or else DQB.Len /= P.Len then
+         return;
+      end if;
+      Mul_Add (DPX, PM1, K1, DPB);   --  (p - 1) k1 + dP, 2 P.Len words
+      Mul_Add (DQX, QM1, K2, DQB);
+      --  Low PL + 8 bytes hold the whole value (< 2^(64 (P.Len + 1)))
+      Encode (EP (0 .. PL + 7), DPX);
+      Encode (EQ (0 .. PL + 7), DQX);
+      Modpow_Top (MP, XP, EP (0 .. PL + 7), P, P0I);
+      Modpow_Top (MQ, XQ, EQ (0 .. PL + 7), Q, Q0I);
+      --  The blinded exponents are secret material
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "unused assignment");
+      EP := (others => 0);
+      EQ := (others => 0);
+      pragma Inspection_Point (EP);
+      pragma Inspection_Point (EQ);
+      pragma Warnings (GNATprove, On, "unused assignment");
+      pragma Warnings (GNATprove, On, "statement has no effect");
 
       --  h = qInv * (m1 - m2) mod p. m2 < q may exceed p, so reduce it
       --  first; then a single borrow-corrected subtraction suffices.
@@ -1113,6 +1149,7 @@ is
       Exp_Len : in     Natural;
       Pub_Exp : in     Unsigned_32;
       CRT     : in     CRT_Params;
+      Blind   : in     Bytes_16;
       OK      :    out Boolean)
    with Pre => X'First = 0 and X'Last < N32'Last
                and Modulus'First = 0 and Modulus'Last < N32'Last
@@ -1136,7 +1173,7 @@ is
               X (0 .. N32 (X_Len) - 1);
             CRT_OK : Boolean;
          begin
-            RSA_Private_CRT (X, X_Len, Modulus, Mod_Len, CRT, CRT_OK);
+            RSA_Private_CRT (X, X_Len, Modulus, Mod_Len, CRT, Blind, CRT_OK);
             if CRT_OK then
                declare
                   Y      : Byte_Seq (0 .. N32 (X_Len) - 1) :=
@@ -1186,6 +1223,7 @@ is
       Signature :    out Byte_Seq;
       Sig_Len   :    out N32;
       OK        :    out Boolean;
+      Blind     : in     Bytes_16;
       Pub_Exp   : in     Unsigned_32 := 0;
       CRT       : in     CRT_Params  := No_CRT)
    is
@@ -1247,6 +1285,7 @@ is
             Exp_Len => Natural (Mod_Len),
             Pub_Exp => Pub_Exp,
             CRT     => CRT,
+            Blind   => Blind,
             OK      => Priv_OK);
 
          if not Priv_OK then
@@ -1275,6 +1314,7 @@ is
       Signature :    out Byte_Seq;
       Sig_Len   :    out N32;
       OK        :    out Boolean;
+      Blind     : in     Bytes_16;
       Pub_Exp   : in     Unsigned_32 := 0;
       CRT       : in     CRT_Params  := No_CRT)
    is
@@ -1325,6 +1365,7 @@ is
             Exp_Len => Natural (Mod_Len),
             Pub_Exp => Pub_Exp,
             CRT     => CRT,
+            Blind   => Blind,
             OK      => Priv_OK);
 
          if not Priv_OK then

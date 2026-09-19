@@ -17,6 +17,33 @@ portable stubs or architecture-selected bodies.
 The timing tests are also x86_64-specific: ctgrind and dudect harnesses use
 Valgrind and `rdtsc`.
 
+## Accelerated tiers and the portable build
+
+Every hand-written x86_64 unit (AES-NI, PCLMULQDQ GHASH, the AVX-512
+AEAD units, the BMI2/ADX Montgomery multiply behind RSA and the P-256
+field) is chosen at run time from CPUID and falls back to the proven
+SPARK implementation when the feature is absent. To turn all of them off
+and run only the proven code, build with
+
+```shell
+SPARKTLSCRYPTO_ASM=disabled alr build
+```
+
+The choice is compiled in (`SPARKTLSCrypto.Tier_Config`, selected by
+source directory, with its own `obj/disabled` and `lib/disabled`) and is
+visible in the build. The library reads no environment variable, file or
+other runtime input to make it, and needs no Ada runtime support beyond
+what the arithmetic itself uses. The smoke tests check the BMI2/ADX tier
+against the SPARK Montgomery multiply on random operands and print which
+path is active.
+
+Valgrind's virtual CPU does not advertise BMI2/ADX, so the ctgrind lane
+builds with `SPARKTLSCRYPTO_ASM=assume_bmi2_adx`, which reports the tier
+present without CPUID so memcheck's taint tracking runs the assembly
+(Valgrind 3.22 executes the instructions). That build faults on a CPU
+without the instructions and is for the test lanes only.
+`CTGRIND_PORTABLE=1` runs the lane on the portable path instead.
+
 ## Build
 
 Use Alire to build the library:

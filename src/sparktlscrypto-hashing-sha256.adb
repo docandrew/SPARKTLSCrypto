@@ -5,6 +5,8 @@
 
 with Interfaces;              use Interfaces;
 with System.Machine_Code;     use System.Machine_Code;
+with SPARKTLSCrypto.CPU;
+pragma Elaborate_All (SPARKTLSCrypto.CPU);
 package body SPARKTLSCrypto.Hashing.SHA256 with
    SPARK_Mode => On
 is
@@ -65,7 +67,10 @@ is
       return (EBX and 16#2000_0000#) /= 0;
    end Detect_SHA_NI;
 
-   SHA_NI_Available : constant Boolean := Detect_SHA_NI;
+   --  Like every accelerated tier: never active in a Portable_Only build
+   --  (SPARKTLSCRYPTO_ASM=disabled), regardless of what CPUID reports.
+   SHA_NI_Available : constant Boolean :=
+     (not SPARKTLSCrypto.CPU.Portable_Only) and then Detect_SHA_NI;
    function Has_HW_Accel return Boolean is (SHA_NI_Available);
 
    ----------------------------------------------------------------------------

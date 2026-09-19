@@ -12,6 +12,19 @@ if ! command -v valgrind >/dev/null 2>&1; then
   exit 2
 fi
 
+# Valgrind's virtual CPU does not advertise BMI2/ADX, so left to CPUID the
+# harnesses would only ever exercise the portable Montgomery code. Build
+# the library with the tier assumed present (SPARKTLSCRYPTO_ASM=
+# assume_bmi2_adx, a compile-time selection into its own obj/lib
+# directory, see SPARKTLSCrypto.Tier_Config) so memcheck's taint tracking
+# covers the assembly. Valgrind 3.22 executes mulx/adcx/adox.
+# CTGRIND_PORTABLE=1 checks the portable path instead.
+if [ "${CTGRIND_PORTABLE:-0}" = "1" ]; then
+  export SPARKTLSCRYPTO_ASM=disabled
+else
+  export SPARKTLSCRYPTO_ASM=assume_bmi2_adx
+fi
+
 echo "Rebuilding library + timing harnesses in ctgrind mode..."
 build_log="$(mktemp)"
 (
@@ -107,7 +120,14 @@ run_one ct_chacha20_poly1305 clean || fail=1
 run_one ct_poly1305_scalar   clean || fail=1
 run_one ct_x25519            clean || fail=1
 run_one ct_ed25519           clean || fail=1
-run_one ct_p256_ecdsa        clean || fail=1
+#  ct_p256_ecdsa: exactly ONE classified site. Sign re-decodes the nonce
+#  point [k]G (SR-66 fault check) to confirm it is on the curve before
+#  using its x-coordinate as r. That coordinate is public (it becomes the
+#  signature's r) but memcheck taints it through the secret nonce k, so
+#  the on-curve branch reads as key-dependent; its outcome does not vary
+#  with k and dudect shows no timing dependence. Same category as
+#  ct_rsa_sign_crt. Any other count means a new key-dependent branch.
+run_one ct_p256_ecdsa        exact 1 || fail=1
 run_one ct_p384_ecdsa        clean || fail=1
 run_one ct_p384_ecdsa_verify clean || fail=1
 run_one ct_p256_ecdsa_verify clean || fail=1
@@ -142,7 +162,7 @@ echo "Restoring optimize build..."
 restore_log="$(mktemp)"
 (
   cd "$ROOT" &&
-  SPARKTLSCRYPTO_BUILD_MODE=optimize alr -n --no-tty build >"$restore_log" 2>&1
+  SPARKTLSCRYPTO_ASM=enabled SPARKTLSCRYPTO_BUILD_MODE=optimize alr -n --no-tty build >"$restore_log" 2>&1
 )
 restore_status=$?
 if [ "$restore_status" -ne 0 ]; then

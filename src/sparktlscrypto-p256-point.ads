@@ -6,6 +6,9 @@
 
 with SPARKNaCl; use SPARKNaCl;
 
+with SPARKTLSCrypto.P256.Fixed_Base;
+
+with SPARKTLSCrypto.BigNat64;
 package SPARKTLSCrypto.P256.Point with
    SPARK_Mode => On
 is
@@ -66,14 +69,48 @@ is
      (P    : in out P256_Jacobian;
       X    : in     Byte_Seq;
       Xlen : in     N32)
-   with Pre => X'First = 0 and then X'Length <= 32 and then Xlen <= X'Length;
+   with Pre => X'First = 0 and then X'Length <= 40 and then Xlen <= X'Length;
+
+   --  Fixed-base table lookup, dispatching (AVX2 tier or SPARK scan) and
+   --  the SPARK scan alone; visible so tests can compare them.
+   procedure Lookup_Fixed
+     (Sel : out SPARKTLSCrypto.P256.Fixed_Base.Affine_Mont;
+      Win : in  SPARKTLSCrypto.P256.Fixed_Base.Window_Index;
+      Mag : in  U32)
+   with Pre => Mag <= 64;
+   procedure Lookup_Fixed_Portable
+     (Sel : out SPARKTLSCrypto.P256.Fixed_Base.Affine_Mont;
+      Win : in  SPARKTLSCrypto.P256.Fixed_Base.Window_Index;
+      Mag : in  U32)
+   with Pre => Mag <= 64;
 
    --  Generator multiplication: P := [x] * G
    procedure P256_Mulgen
      (P    : out P256_Jacobian;
       X    : in  Byte_Seq;
       Xlen : in  N32)
-   with Pre => X'First = 0 and then X'Length <= 32 and then Xlen <= X'Length;
+   with Pre => X'First = 0 and then X'Length <= 40 and then Xlen <= X'Length;
+
+   --  Blinded forms for secret scalars (SR-62). Blind is 40 fresh random
+   --  bytes from the caller's CSPRNG: bytes 0 .. 7 give r, and the scalar
+   --  actually walked is k + r * n (same point, different digits every
+   --  time); bytes 8 .. 39 give lambda, and the running point is kept in
+   --  randomised projective coordinates (X lambda^2, Y lambda^3, Z lambda)
+   --  so no intermediate coordinate is a function of the key alone. The
+   --  results equal those of the unblinded entries; the smoke tests check
+   --  it. Cost: about a quarter more windows and three field multiplies
+   --  per window.
+   procedure P256_Mulgen_Blinded
+     (P     : out P256_Jacobian;
+      K     : in  Bytes_32;
+      Blind : in  Byte_Seq)
+   with Pre => Blind'First = 0 and then Blind'Length = 40;
+
+   procedure P256_Mul_Blinded
+     (P     : in out P256_Jacobian;
+      K     : in     Bytes_32;
+      Blind : in     Byte_Seq)
+   with Pre => Blind'First = 0 and then Blind'Length = 40;
 
    --  Combined multiply-add for ECDSA: A := [x]*A + [y]*G
    --  A is a 65-byte encoded point (modified in place).

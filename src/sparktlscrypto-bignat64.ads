@@ -43,6 +43,11 @@ is
    subtype Word_Count is Natural range 0 .. Max_Words;
    type Word_Array is array (Natural range 0 .. Max_Words - 1) of Word;
 
+   --  Four little-endian words: the fixed-size 256-bit shape shared by the
+   --  P-256 scalar field (SPARKTLSCrypto.P256.ECDSA derives from it) and
+   --  the four-limb Montgomery routine of the BMI2/ADX tier.
+   type Limbs_4 is array (0 .. 3) of Word;
+
    --  A big natural number: Len active words in little-endian order.
    --  Words beyond Len are always zero.
    type Big_Nat is record
@@ -105,7 +110,31 @@ is
 
    --  Montgomery multiplication: Result = (A * B * R^-1) mod M
    --  M0I is -M^(-1) mod 2^64.
+   --  Dispatches to the BMI2/ADX tier (SPARKTLSCrypto.BigNat64_ADX) when
+   --  the CPU has it and M.Len is a multiple of four, otherwise runs
+   --  Monty_Mul_Portable. Both produce the same words for every input.
    procedure Monty_Mul
+     (Result : out Big_Nat;
+      A, B   : in  Big_Nat;
+      M      : in  Big_Nat;
+      M0I    : in  Word)
+   with Pre => A.Len = M.Len and B.Len = M.Len
+               and M.Len > 0,
+        Post => Result.Len = M.Len;
+
+   --  Result = (A * A * R^-1) mod M. The BMI2/ADX tier has a dedicated
+   --  squaring (fewer products); otherwise Monty_Mul_Portable (A, A).
+   procedure Monty_Sqr
+     (Result : out Big_Nat;
+      A      : in  Big_Nat;
+      M      : in  Big_Nat;
+      M0I    : in  Word)
+   with Pre => A.Len = M.Len and M.Len > 0,
+        Post => Result.Len = M.Len;
+
+   --  The proven SPARK implementation, always available. Word-by-word
+   --  CIOS with one final constant-time conditional subtraction.
+   procedure Monty_Mul_Portable
      (Result : out Big_Nat;
       A, B   : in  Big_Nat;
       M      : in  Big_Nat;

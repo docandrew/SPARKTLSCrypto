@@ -2,6 +2,7 @@
 --  Ported from BearSSL (Thomas Pornin, MIT license)
 
 with SPARKNaCl; use SPARKNaCl;
+with SPARKTLSCrypto.BigNat64;
 
 package SPARKTLSCrypto.P256.ECDSA with
    SPARK_Mode => On
@@ -15,13 +16,21 @@ is
       R    : in ECDSA_Sig_Half;
       S    : in ECDSA_Sig_Half) return Boolean;
 
+   --  Blind: 40 fresh random bytes from the caller's CSPRNG (SR-62):
+   --  the nonce's scalar multiplication runs on k + r * n with a random
+   --  r and in randomised projective coordinates. The signature value
+   --  does not depend on Blind. OK is False (and r, s are zero) if the
+   --  computed point fails the curve equation (SR-66: a corrupted table
+   --  or a fault fails closed rather than signing).
    procedure Sign
      (Hash  : in     Bytes_32;
       D     : in     ECDSA_Sig_Half;
       K     : in     ECDSA_Sig_Half;
+      Blind : in     Byte_Seq;
       R_Out :    out ECDSA_Sig_Half;
       S_Out :    out ECDSA_Sig_Half;
-      OK    :    out Boolean);
+      OK    :    out Boolean)
+   with Pre => Blind'First = 0 and then Blind'Length = 40;
 
    --  Test helpers (byte-level interface for unit testing).
    --  R_Bytes is filled element-by-element via Scalar_To_Bytes; flow
@@ -49,7 +58,9 @@ is
    with Relaxed_Initialization => R_Bytes, Post => R_Bytes'Initialized;
 
 private
-   type Scalar_64 is array (0 .. 3) of Unsigned_64;
+   --  Four little-endian 64-bit limbs; derived from BigNat64.Limbs_4 so
+   --  the BMI2/ADX four-limb Montgomery routine applies without copies.
+   type Scalar_64 is new SPARKTLSCrypto.BigNat64.Limbs_4;
    type Scalar_Wide is array (0 .. 7) of Unsigned_64;
 
    procedure P256_Muladd_32
@@ -97,9 +108,23 @@ private
      (D    : out Scalar_64;
       A, B : in  Scalar_64);
 
+   --  D := A^(n-2) mod n, for 0 < A < n. Montgomery domain internally
+   --  (R = 2^256), fixed 4-bit windows over the public exponent.
    procedure Inv_Mod_N
      (D : out Scalar_64;
       A : in  Scalar_64);
+
+   --  Montgomery product modulo n: D = A * B * 2^-256 mod n, inputs below
+   --  n. Mont_Mul_N dispatches to the BMI2/ADX tier when present, else
+   --  to Mont_Mul_N_Portable (proven SPARK); both are visible so tests
+   --  can compare them.
+   procedure Mont_Mul_N
+     (D    : out Scalar_64;
+      A, B : in  Scalar_64);
+
+   procedure Mont_Mul_N_Portable
+     (D    : out Scalar_64;
+      A, B : in  Scalar_64);
 
    function Is_Zero_Scalar (A : Scalar_64) return Boolean;
 

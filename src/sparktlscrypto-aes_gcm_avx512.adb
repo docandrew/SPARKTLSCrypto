@@ -2,6 +2,8 @@
 --  See sparktlscrypto-aes_gcm_avx512.ads.
 
 with System.Machine_Code; use System.Machine_Code;
+with SPARKTLSCrypto.CPU;
+pragma Elaborate_All (SPARKTLSCrypto.CPU);
 with Interfaces;          use Interfaces;
 with SPARKNaCl;           use SPARKNaCl;
 with SPARKTLSCrypto.GHASH_NI;
@@ -799,5 +801,5 @@ is
    end GHASH_16_Blocks;
 
 begin
-   Has_AVX512_AES_GCM := Detect_AVX512_AES_GCM;
+   Has_AVX512_AES_GCM := (not SPARKTLSCrypto.CPU.Portable_Only) and then Detect_AVX512_AES_GCM;
 end SPARKTLSCrypto.AES_GCM_AVX512;

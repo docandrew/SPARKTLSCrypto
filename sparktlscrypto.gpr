@@ -4,10 +4,25 @@ project SPARKTLSCrypto is
    for Library_Name use "sparktlscrypto";
    for Library_Version use Project'Library_Name & ".so." & SPARKTLSCrypto_Config.Crate_Version;
 
-   for Source_Dirs use ("src");
-   for Object_Dir use "obj";
+   --  Accelerated tiers: dispatch on CPUID (enabled, default), never
+   --  (disabled: proven SPARK code only), or assume the BMI2/ADX tier is
+   --  present without CPUID (assume_bmi2_adx: constant-time test lanes
+   --  under Valgrind only). Compiled in via SPARKTLSCrypto.Tier_Config.
+   type Asm_Kind is ("enabled", "disabled", "assume_bmi2_adx");
+   Asm_Mode : Asm_Kind := External ("SPARKTLSCRYPTO_ASM", "enabled");
+
+   for Source_Dirs use ("src", "src/tiers/" & Asm_Mode);
+   --  The tier variants share basenames (Tier_Config), so each Asm_Mode
+   --  gets its own object and library directory; the default keeps the
+   --  paths the proof and CI scripts expect.
+   Asm_Dir_Suffix := "";
+   case Asm_Mode is
+      when "enabled" => Asm_Dir_Suffix := "";
+      when others    => Asm_Dir_Suffix := "/" & Asm_Mode;
+   end case;
+   for Object_Dir use "obj" & Asm_Dir_Suffix;
    for Create_Missing_Dirs use "True";
-   for Library_Dir use "lib";
+   for Library_Dir use "lib" & Asm_Dir_Suffix;
 
    type Library_Type_Type is ("relocatable", "static", "static-pic");
    Library_Type : Library_Type_Type :=
@@ -60,6 +75,8 @@ project SPARKTLSCrypto is
 
    Build_Switches := ();
    AES_NI_Switches := ("-maes", "-mpclmul", "-mssse3");
+   ADX_Switches    := ("-mbmi2", "-madx");
+   AVX2_Switches   := ("-mavx2");
    AVX512_Switches := ("-mavx512f", "-mavx512dq", "-mavx512bw",
                        "-mavx512vl", "-mavx512ifma", "-mvaes",
                        "-mvpclmulqdq");
@@ -110,6 +127,24 @@ project SPARKTLSCrypto is
         Compile_Checks_Switches &
         Build_Switches &
         AES_NI_Switches &
+        Runtime_Checks_Switches &
+        Style_Checks_Switches &
+        Contracts_Switches &
+        ("-gnatw.X", "-gnat2022", "-gnatQ");
+
+      for Switches ("sparktlscrypto-bignat64_adx.adb") use
+        Compile_Checks_Switches &
+        Build_Switches &
+        ADX_Switches &
+        Runtime_Checks_Switches &
+        Style_Checks_Switches &
+        Contracts_Switches &
+        ("-gnatw.X", "-gnat2022", "-gnatQ");
+
+      for Switches ("sparktlscrypto-p256_gather_avx2.adb") use
+        Compile_Checks_Switches &
+        Build_Switches &
+        AVX2_Switches &
         Runtime_Checks_Switches &
         Style_Checks_Switches &
         Contracts_Switches &

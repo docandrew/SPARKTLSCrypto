@@ -18,6 +18,8 @@
 
 with System;
 with System.Machine_Code; use System.Machine_Code;
+with SPARKTLSCrypto.CPU;
+pragma Elaborate_All (SPARKTLSCrypto.CPU);
 with Interfaces;          use Interfaces;
 with SPARKNaCl.MAC;
 with SPARKTLSCrypto.Poly1305;
@@ -38,7 +40,11 @@ is
    --  plus XCR0 OS state-save enablement (XMM/YMM/Opmask/ZMM bits).
    ----------------------------------------------------------------------------
    function Detect_AVX512_IFMA return Boolean is
-      Mask : constant Unsigned_32 := 16#0001_0000# or 16#0020_0000#;
+      --  F (bit 16) + IFMA (bit 21), plus BW (bit 30) and VL (bit 31): the
+      --  kernel uses vmovdqu8 (BW) and xmm16-31 encodings (VL). A part with
+      --  F+IFMA but not BW/VL would #UD. Same rule as Detect_AVX512_AES_GCM.
+      Mask : constant Unsigned_32 :=
+        16#0001_0000# or 16#0020_0000# or 16#4000_0000# or 16#8000_0000#;
    begin
       declare
          EAX, EBX, ECX, EDX : Unsigned_32;
@@ -727,5 +733,5 @@ is
    end Onetimeauth;
 
 begin
-   Has_AVX512_IFMA_Poly1305 := Detect_AVX512_IFMA;
+   Has_AVX512_IFMA_Poly1305 := (not SPARKTLSCrypto.CPU.Portable_Only) and then Detect_AVX512_IFMA;
 end SPARKTLSCrypto.Poly1305_AVX512_IFMA;

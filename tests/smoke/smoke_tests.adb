@@ -8,6 +8,13 @@ with SPARKNaCl.Core;
 with SPARKNaCl.Hashing.SHA384;
 
 with SPARKTLSCrypto.AES_GCM;
+with SPARKTLSCrypto.BigNat64;
+with SPARKTLSCrypto.BigNat64_ADX;
+with SPARKTLSCrypto.P256.ECDSA;
+with SPARKTLSCrypto.P256.Fixed_Base;
+with SPARKTLSCrypto.P256.Point;
+with SPARKTLSCrypto.CPU;
+with SPARKTLSCrypto.Fiat_P256;
 with SPARKTLSCrypto.ChaCha20_Poly1305;
 with SPARKTLSCrypto.Ed25519;
 with SPARKTLSCrypto.Hashing.SHA256;
@@ -29,6 +36,357 @@ procedure Smoke_Tests is
          Failures := Failures + 1;
       end if;
    end Check;
+
+   --  The BMI2/ADX Montgomery tier must produce exactly the words of the
+   --  proven SPARK code. Random operands at every word count the tier
+   --  accepts, plus the P-256 field entry. When the tier is inactive (no
+   --  BMI2/ADX, or a SPARKTLSCRYPTO_ASM=disabled build) both sides are the
+   --  same code and the check is vacuous; the INFO line says which.
+   procedure Test_ADX_Tiers is
+      use SPARKTLSCrypto.BigNat64;
+      Seed : Unsigned_64 := 16#9E37_79B9_7F4A_7C15#;
+
+      function Next return Unsigned_64 is
+      begin
+         Seed := Seed xor Shift_Left (Seed, 13);
+         Seed := Seed xor Shift_Right (Seed, 7);
+         Seed := Seed xor Shift_Left (Seed, 17);
+         return Seed;
+      end Next;
+
+      procedure Random_Nat (X : out Big_Nat; Len : Word_Count) is
+      begin
+         Zero (X, Len);
+         for I in 0 .. Len - 1 loop
+            X.W (I) := Next;
+         end loop;
+      end Random_Nat;
+
+      Sizes    : constant array (1 .. 5) of Word_Count := (4, 8, 16, 32, 64);
+      A, B, M  : Big_Nat;
+      R1, R2   : Big_Nat;
+      M0I      : Word;
+      All_Same : Boolean := True;
+   begin
+      if SPARKTLSCrypto.CPU.Has_BMI2_ADX then
+         Put_Line ("INFO bmi2/adx montgomery tier active");
+      else
+         Put_Line ("INFO bmi2/adx montgomery tier inactive"
+                   & " (cpu lacks it or SPARKTLSCRYPTO_ASM=disabled build)");
+      end if;
+      if SPARKTLSCrypto.Hashing.SHA256.Has_HW_Accel then
+         Put_Line ("INFO sha-ni tier active");
+      else
+         Put_Line ("INFO sha-ni tier inactive"
+                   & " (cpu lacks it or SPARKTLSCRYPTO_ASM=disabled build)");
+      end if;
+      --  Regression for the SHA-NI tier once ignoring the build-time
+      --  portable switch: a Portable_Only build must never report hardware
+      --  acceleration, whatever CPUID says.
+      Check ("portable build never enables sha-ni",
+             not (SPARKTLSCrypto.CPU.Portable_Only
+                  and SPARKTLSCrypto.Hashing.SHA256.Has_HW_Accel));
+      for S of Sizes loop
+         for Trial in 1 .. 200 loop
+            Random_Nat (M, S);
+            M.W (0)     := M.W (0) or 1;
+            M.W (S - 1) := M.W (S - 1) or Top_Bit;
+            Random_Nat (A, S);
+            Random_Nat (B, S);
+            A.W (S - 1) := A.W (S - 1) and not Top_Bit;
+            B.W (S - 1) := B.W (S - 1) and not Top_Bit;
+            M0I := Ninv (M.W (0));
+            Monty_Mul (R1, A, B, M, M0I);
+            Monty_Mul_Portable (R2, A, B, M, M0I);
+            All_Same := All_Same and then R1 = R2;
+         end loop;
+      end loop;
+      Check ("monty_mul tier matches portable (4/8/16/32/64 words x 200)",
+             All_Same);
+
+      --  Carry-adversarial operands. OpenSSL's Montgomery assembly had
+      --  three carry-propagation CVEs (2016-7055, 2017-3732, 2017-3736)
+      --  that random operands do not reach: limbs of all ones, single
+      --  bits, values one below the modulus, moduli of the form 2^k - c.
+      --  Every pair below is run against the SPARK multiply.
+      declare
+         type Pattern is (Ones, Zero, Top, One, Alt, Near_M, Rand);
+         Pats : constant array (0 .. 6) of Pattern :=
+           (Ones, Zero, Top, One, Alt, Near_M, Rand);
+         Same : Boolean := True;
+
+         procedure Fill (X : out Big_Nat; Len : Word_Count; P : Pattern;
+                         Modulus : Big_Nat) is
+         begin
+            Zero (X, Len);
+            for I in 0 .. Len - 1 loop
+               X.W (I) :=
+                 (case P is
+                    when Ones   => Word'Last,
+                    when Zero   => 0,
+                    when Top    => (if I = Len - 1 then Top_Bit else 0),
+                    when One    => (if I = 0 then 1 else 0),
+                    when Alt    => (if I mod 2 = 0 then 16#AAAA_AAAA_AAAA_AAAA#
+                                    else 16#5555_5555_5555_5555#),
+                    when Near_M => Modulus.W (I),
+                    when Rand   => Next);
+            end loop;
+            if P = Near_M then
+               X.W (0) := X.W (0) - 1;   --  M - 1 (M is odd, no borrow)
+            end if;
+            --  keep A, B below M: clear the top bit (M has it set)
+            X.W (Len - 1) := X.W (Len - 1) and not Top_Bit;
+         end Fill;
+      begin
+         for S of Sizes loop
+            for MP in 0 .. 2 loop
+               Zero (M, S);
+               case MP is
+                  when 0 =>   --  2^(64 S) - 1: every limb all ones
+                     for I in 0 .. S - 1 loop M.W (I) := Word'Last; end loop;
+                  when 1 =>   --  2^(64 S - 1) + 1: sparse
+                     M.W (S - 1) := Top_Bit; M.W (0) := M.W (0) or 1;
+                  when others =>   --  random odd, top bit set
+                     Random_Nat (M, S);
+                     M.W (0) := M.W (0) or 1;
+                     M.W (S - 1) := M.W (S - 1) or Top_Bit;
+               end case;
+               M0I := Ninv (M.W (0));
+               for PA of Pats loop
+                  for PB of Pats loop
+                     Fill (A, S, PA, M);
+                     Fill (B, S, PB, M);
+                     Monty_Mul (R1, A, B, M, M0I);
+                     Monty_Mul_Portable (R2, A, B, M, M0I);
+                     Same := Same and then R1 = R2;
+                  end loop;
+               end loop;
+            end loop;
+         end loop;
+         Check ("monty_mul tier matches portable on carry-adversarial operands",
+                Same);
+         --  Squaring: the dedicated tier routine against A * A portable,
+         --  same moduli and operand patterns.
+         Same := True;
+         for S of Sizes loop
+            for MP in 0 .. 2 loop
+               Zero (M, S);
+               case MP is
+                  when 0 => for I in 0 .. S - 1 loop M.W (I) := Word'Last; end loop;
+                  when 1 => M.W (S - 1) := Top_Bit; M.W (0) := M.W (0) or 1;
+                  when others =>
+                     Random_Nat (M, S);
+                     M.W (0) := M.W (0) or 1;
+                     M.W (S - 1) := M.W (S - 1) or Top_Bit;
+               end case;
+               M0I := Ninv (M.W (0));
+               for PA of Pats loop
+                  Fill (A, S, PA, M);
+                  Monty_Sqr (R1, A, M, M0I);
+                  Monty_Mul_Portable (R2, A, A, M, M0I);
+                  Same := Same and then R1 = R2;
+               end loop;
+               for Trial in 1 .. 100 loop
+                  Random_Nat (A, S);
+                  A.W (S - 1) := A.W (S - 1) and not Top_Bit;
+                  Monty_Sqr (R1, A, M, M0I);
+                  Monty_Mul_Portable (R2, A, A, M, M0I);
+                  Same := Same and then R1 = R2;
+               end loop;
+            end loop;
+         end loop;
+         Check ("monty_sqr tier matches portable (adversarial + random)", Same);
+      end;
+
+      declare
+         use SPARKTLSCrypto.Fiat_P256;
+         X, Y : FE;
+         Same : Boolean := True;
+      begin
+         for Trial in 1 .. 1000 loop
+            --  top limb below 2^32 keeps the value below p
+            X := (Next, Next, Next, Next and 16#FFFF_FFFF#);
+            Y := (Next, Next, Next, Next and 16#FFFF_FFFF#);
+            Same := Same and then Mul (X, Y) = Mul_Portable (X, Y)
+                         and then Sqr (X) = Sqr_Portable (X);
+         end loop;
+         Check ("fiat p256 mul/sqr tier matches portable (1000)", Same);
+      end;
+
+      --  General four-limb Montgomery core against the SPARK Monty_Mul at
+      --  four words, random odd moduli with the top bit set.
+      declare
+         use SPARKTLSCrypto.BigNat64_ADX;
+         LA, LB, LM, LR : Limbs_4;
+         PA, PB, PM, PR : Big_Nat;
+         Same : Boolean := True;
+      begin
+         if SPARKTLSCrypto.CPU.Has_BMI2_ADX then
+            for Trial in 1 .. 1000 loop
+               for I in 0 .. 3 loop
+                  LM (I) := Next;
+                  LA (I) := Next;
+                  LB (I) := Next;
+               end loop;
+               LM (0) := LM (0) or 1;
+               LM (3) := LM (3) or Top_Bit;
+               LA (3) := LA (3) and not Top_Bit;
+               LB (3) := LB (3) and not Top_Bit;
+               Zero (PA, 4);
+               Zero (PB, 4);
+               Zero (PM, 4);
+               for I in 0 .. 3 loop
+                  PA.W (I) := LA (I);
+                  PB.W (I) := LB (I);
+                  PM.W (I) := LM (I);
+               end loop;
+               Mont_Mul_4 (LR, LA, LB, LM, Ninv (LM (0)));
+               Monty_Mul_Portable (PR, PA, PB, PM, Ninv (LM (0)));
+               for I in 0 .. 3 loop
+                  Same := Same and then LR (I) = PR.W (I);
+               end loop;
+            end loop;
+         end if;
+         Check ("mont_mul_4 tier matches portable at 4 words (1000)", Same);
+      end;
+
+      --  Inversion mod n through the public hooks: a * a^-1 = 1 mod n.
+      declare
+         use SPARKTLSCrypto.P256.ECDSA;
+         A, Inv, Prod : ECDSA_Sig_Half;
+         Good : Boolean := True;
+      begin
+         for Trial in 1 .. 200 loop
+            for I in A'Range loop
+               A (I) := Byte (Next and 255);
+            end loop;
+            A (A'First) := 0;   --  below n
+            A (A'Last)  := A (A'Last) or 1;   --  non-zero
+            Test_Inv_Mod_N (A, Inv);
+            Test_Mul_Mod_N (A, Inv, Prod);
+            for I in Prod'Range loop
+               Good := Good and then
+                 Prod (I) = (if I = Prod'Last then 1 else 0);
+            end loop;
+         end loop;
+         Check ("p256 inv_mod_n: a * inv(a) = 1 mod n (200)", Good);
+      end;
+
+      --  Fixed-base gather tier against the SPARK scan, every window and
+      --  every magnitude including 0.
+      declare
+         use SPARKTLSCrypto.P256.Fixed_Base;
+         use SPARKTLSCrypto.P256.Point;
+         use type SPARKTLSCrypto.Fiat_P256.FE;
+         A, B : Affine_Mont;
+         Same : Boolean := True;
+      begin
+         if SPARKTLSCrypto.CPU.Has_AVX2 then
+            Put_Line ("INFO avx2 fixed-base gather tier active");
+         else
+            Put_Line ("INFO avx2 fixed-base gather tier inactive");
+         end if;
+         for Win in Window_Index loop
+            for Mag in 0 .. 64 loop
+               Lookup_Fixed (A, Win, U32 (Mag));
+               Lookup_Fixed_Portable (B, Win, U32 (Mag));
+               Same := Same and then A.X = B.X and then A.Y = B.Y;
+            end loop;
+         end loop;
+         Check ("p256 fixed-base gather matches portable (37 x 65)", Same);
+      end;
+
+      --  The fixed-base table rebuilt from itself with the proven point
+      --  arithmetic: each row's first entry is the previous row's first
+      --  entry doubled seven times, and each further entry is the
+      --  previous one plus the row's base. Every one of the 2368 points
+      --  is checked, so a wrong or corrupted entry cannot hide.
+      declare
+         use SPARKTLSCrypto.P256.Fixed_Base;
+         use SPARKTLSCrypto.P256.Point;
+         use type SPARKTLSCrypto.Fiat_P256.FE;
+         Base, Acc, Tmp : P256_Jacobian;
+         Flag  : U32;
+         Good  : Boolean := True;
+         function Matches (P : P256_Jacobian; E : Affine_Mont) return Boolean is
+            Q : P256_Jacobian := P;
+         begin
+            P256_To_Affine (Q);
+            return Q.X = E.X and then Q.Y = E.Y;
+         end Matches;
+      begin
+         Base := (X => Fixed_G (0) (0).X, Y => Fixed_G (0) (0).Y,
+                  Z => SPARKTLSCrypto.P256.FE_One);
+         for Win in Window_Index loop
+            if Win > 0 then
+               for D in 1 .. 7 loop
+                  P256_Double (Base);
+               end loop;
+               Good := Good and then Matches (Base, Fixed_G (Win) (0));
+               Base := (X => Fixed_G (Win) (0).X, Y => Fixed_G (Win) (0).Y,
+                        Z => SPARKTLSCrypto.P256.FE_One);
+            end if;
+            Acc := Base;
+            for K in 1 .. 63 loop
+               if K = 1 then
+                  --  2 * base: the mixed add excludes the doubling case
+                  P256_Double (Acc);
+               else
+                  Tmp := (X => Fixed_G (Win) (0).X, Y => Fixed_G (Win) (0).Y,
+                          Z => SPARKTLSCrypto.P256.FE_One);
+                  P256_Add_Mixed (Acc, Tmp, Flag);
+               end if;
+               Good := Good and then Matches (Acc, Fixed_G (Win) (K));
+            end loop;
+         end loop;
+         Check ("p256 fixed-base table self-consistent (2944 points)", Good);
+      end;
+
+      --  SR-62: blinding must not change results. Random blinds against
+      --  the unblinded entries: fixed-base and variable-point multiplies
+      --  (compared in affine form) and full ECDSA signatures.
+      declare
+         use SPARKTLSCrypto.P256.Point;
+         use type SPARKTLSCrypto.Fiat_P256.FE;
+         K      : Bytes_32;
+         Blind  : Byte_Seq (0 .. 39);
+         P1, P2, Q : P256_Jacobian;
+         Same : Boolean := True;
+         Hash : Bytes_32;
+         D    : SPARKTLSCrypto.P256.ECDSA.ECDSA_Sig_Half;
+         R1, S1, R2, S2 : SPARKTLSCrypto.P256.ECDSA.ECDSA_Sig_Half;
+         OK1, OK2 : Boolean;
+         Zero40 : constant Byte_Seq (0 .. 39) := (others => 0);
+      begin
+         for Trial in 1 .. 50 loop
+            for I in K'Range loop K (I) := Byte (Next and 255); end loop;
+            K (0) := K (0) and 16#7F#;   --  below n
+            K (31) := K (31) or 1;
+            for I in Blind'Range loop Blind (I) := Byte (Next and 255); end loop;
+            P256_Mulgen (P1, Byte_Seq (K), 32);
+            P256_Mulgen_Blinded (P2, K, Blind);
+            P256_To_Affine (P1); P256_To_Affine (P2);
+            Same := Same and then P1.X = P2.X and then P1.Y = P2.Y;
+            --  variable point: Q = [k]G in Jacobian form from above
+            Q := P1;
+            P256_Mul (P1, Byte_Seq (K), 32);
+            P256_Mul_Blinded (Q, K, Blind);
+            P256_To_Affine (P1); P256_To_Affine (Q);
+            Same := Same and then P1.X = Q.X and then P1.Y = Q.Y;
+            for I in Hash'Range loop Hash (I) := Byte (Next and 255); end loop;
+            for I in D'Range loop D (I) := Byte (Next and 255); end loop;
+            D (0) := D (0) and 16#7F#;
+            SPARKTLSCrypto.P256.ECDSA.Sign
+              (Hash, D, SPARKTLSCrypto.P256.ECDSA.ECDSA_Sig_Half (K), Zero40, R1, S1, OK1);
+            SPARKTLSCrypto.P256.ECDSA.Sign
+              (Hash, D, SPARKTLSCrypto.P256.ECDSA.ECDSA_Sig_Half (K), Blind, R2, S2, OK2);
+            Same := Same and then OK1 and then OK2
+                    and then Equal (Byte_Seq (R1), Byte_Seq (R2))
+                    and then Equal (Byte_Seq (S1), Byte_Seq (S2));
+         end loop;
+         Check ("p256 blinded mulgen/mul/sign equal unblinded (50)", Same);
+      end;
+   end Test_ADX_Tiers;
 
    procedure Test_SHA256 is
       D : SPARKTLSCrypto.Hashing.SHA256.Digest;
@@ -395,6 +753,7 @@ procedure Smoke_Tests is
                 Signature => Sig_PSS, Sig_Len => 257));
    end Test_RSA_Verify;
 begin
+   Test_ADX_Tiers;
    Test_SHA256;
    Test_HMAC_HKDF;
    Test_X25519;

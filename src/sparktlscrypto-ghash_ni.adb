@@ -24,6 +24,8 @@
 --  across the 64-bit boundary inside the low qword.
 
 with System.Machine_Code; use System.Machine_Code;
+with SPARKTLSCrypto.CPU;
+pragma Elaborate_All (SPARKTLSCrypto.CPU);
 with Interfaces;          use Interfaces;
 with SPARKNaCl;           use SPARKNaCl;
 
@@ -355,5 +357,5 @@ is
    end GHASH_4_Blocks;
 
 begin
-   Has_PCLMULQDQ := Detect_PCLMULQDQ;
+   Has_PCLMULQDQ := (not SPARKTLSCrypto.CPU.Portable_Only) and then Detect_PCLMULQDQ;
 end SPARKTLSCrypto.GHASH_NI;

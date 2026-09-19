@@ -1,6 +1,10 @@
 --  SPARKTLS P-256 Point Arithmetic (body)
 --  Ported from BearSSL's ec_p256_m31.c
 
+with SPARKTLSCrypto.P256.Fixed_Base; use SPARKTLSCrypto.P256.Fixed_Base;
+with SPARKTLSCrypto.P256_Gather_AVX2;
+with SPARKTLSCrypto.CPU;
+
 package body SPARKTLSCrypto.P256.Point with
    SPARK_Mode => On
 is
@@ -13,84 +17,6 @@ is
       16#E5A220ABF7212ED6#,
       16#DC30061D04874834#);
 
-   --  Comb precomputed table for generator multiplication.
-   --  T[k] = sum_{j=0}^{3} bit_j(k) * 2^(64j) * G  for k=0..15
-   --  Points stored in Montgomery affine form (x_mont, y_mont).
-   --  Computed from NIST P-256 generator, verified on curve.
-
-   type Comb_Point is record
-      X : P256_FE;
-      Y : P256_FE;
-   end record;
-   type Comb_Table_T is array (0 .. 15) of Comb_Point;
-
-   Comb_G : constant Comb_Table_T := (
-     0 => (X => (0, 0, 0, 0),
-           Y => (0, 0, 0, 0)),  --  infinity
-     1 => (X => (16#79E730D418A9143C#, 16#75BA95FC5FEDB601#,
-                  16#79FB732B77622510#, 16#18905F76A53755C6#),
-           Y => (16#DDF25357CE95560A#, 16#8B4AB8E4BA19E45C#,
-                  16#D2E88688DD21F325#, 16#8571FF1825885D85#)),
-     2 => (X => (16#4F922FC516A0D2BB#, 16#0D5CC16C1A623499#,
-                  16#9241CF3A57C62C8B#, 16#2F5E6961FD1B667F#),
-           Y => (16#5C15C70BF5A01797#, 16#3D20B44D60956192#,
-                  16#04911B37071FDB52#, 16#F648F9168D6F0F7B#)),
-     3 => (X => (16#9E566847E137BBBC#, 16#E434469E8A6A0BEC#,
-                  16#B1C4276179D73463#, 16#5ABE0285133D0015#),
-           Y => (16#92AA837CC04C7DAB#, 16#573D9F4C43260C07#,
-                  16#0C93156278E6CC37#, 16#94BB725B6B6F7383#)),
-     4 => (X => (16#62A8C244BFE20925#, 16#91C19AC38FDCE867#,
-                  16#5A96A5D5DD387063#, 16#61D587D421D324F6#),
-           Y => (16#E87673A2A37173EA#, 16#2384800853778B65#,
-                  16#10F8441E05BAB43E#, 16#FA11FE124621EFBE#)),
-     5 => (X => (16#1C891F2B2CB19FFD#, 16#01BA8D5BB1923C23#,
-                  16#B6D03D678AC5CA8E#, 16#586EB04C1F13BEDC#),
-           Y => (16#0C35C6E527E8ED09#, 16#1E81A33C1819EDE2#,
-                  16#278FD6C056C652FA#, 16#19D5AC0870864F11#)),
-     6 => (X => (16#62577734D2B533D5#, 16#673B8AF6A1BDDDC0#,
-                  16#577E7C9AA79EC293#, 16#BB6DE651C3B266B1#),
-           Y => (16#E7E9303AB65259B3#, 16#D6A0AFD3D03A7480#,
-                  16#C5AC83D19B3CFC27#, 16#60B4619A5D18B99B#)),
-     7 => (X => (16#BD6A38E11AE5AA1C#, 16#B8B7652B49E73658#,
-                  16#0B130014EE5F87ED#, 16#9D0F27B2AEEBFFCD#),
-           Y => (16#CA9246317A730A55#, 16#9C955B2FDDBBC83A#,
-                  16#07C1DFE0AC019A71#, 16#244A566D356EC48D#)),
-     8 => (X => (16#56F8410EF4F8B16A#, 16#97241AFEC47B266A#,
-                  16#0A406B8E6D9C87C1#, 16#803F3E02CD42AB1B#),
-           Y => (16#7F0309A804DBEC69#, 16#A83B85F73BBAD05F#,
-                  16#C6097273AD8E197F#, 16#C097440E5067ADC1#)),
-     9 => (X => (16#846A56F2C379AB34#, 16#A8EE068B841DF8D1#,
-                  16#20314459176C68EF#, 16#F1AF32D5915F1F30#),
-           Y => (16#99C375315D75BD50#, 16#837CFFBAF72F67BC#,
-                  16#0613A41848D7723F#, 16#23D0F130E2D41C8B#)),
-    10 => (X => (16#ED93E225D5BE5A2B#, 16#6FE799835934F3C6#,
-                  16#4314092622626FFC#, 16#50BBB4D97990216A#),
-           Y => (16#378191C6E57EC63E#, 16#65422C40181DCDB2#,
-                  16#41A8099B0236E0F6#, 16#2B10011801FE49C3#)),
-    11 => (X => (16#FC68B5C59B391593#, 16#C385F5A2598270FC#,
-                  16#7144F3AAD19ADCBB#, 16#DD55899983FBAE0C#),
-           Y => (16#93B88B8E74B82FF4#, 16#D2E03C4071E734C9#,
-                  16#9A7A9EAF43C0322A#, 16#E6E4C551149D6041#)),
-    12 => (X => (16#5FE14BFE80EC21FE#, 16#F6CE116AC255BE82#,
-                  16#98BC5A072F4A5D67#, 16#FAD27148DB7E63AF#),
-           Y => (16#90C0B6AC29AB05B3#, 16#37A9A83C4E251AE6#,
-                  16#0A7DC875C2AADE7D#, 16#77387DE39F0E1A84#)),
-    13 => (X => (16#1E9ECC49A56C0DD7#, 16#A5CFFCD846086C74#,
-                  16#8F7A1408F505AECE#, 16#B37B85C0BEF0C47E#),
-           Y => (16#3596B6E4CC0E6A8F#, 16#FD6D4BBF6B388F23#,
-                  16#ABA453FAC39CEF4E#, 16#9C135AC8F9F628D5#)),
-    14 => (X => (16#0A1C729495C8F8BE#, 16#2961C4803BF362BF#,
-                  16#9E418403DF63D4AC#, 16#C109F9CB91ECE900#),
-           Y => (16#C2D095D058945705#, 16#B9083D96DDEB85C0#,
-                  16#84692B8D7A40449B#, 16#9BC3344F2EEE1EE1#)),
-    15 => (X => (16#0D5AE35642913074#, 16#55491B2748A542B1#,
-                  16#469CA665B310732A#, 16#29591D525F1A4CC1#),
-           Y => (16#E76F5B6BB84F983F#, 16#BE7EEF419F5F84E1#,
-                  16#1200D49680BAA189#, 16#6376551F18EF332C#)));
-
-   ---------------------------------------------------------------
-   --  Constant-time conditional copy of Jacobian points
-   ---------------------------------------------------------------
 
    procedure CT_Copy_Point
      (Ctl : in     U32;
@@ -102,32 +28,6 @@ is
       CT_Copy (Ctl, Dst.Y, Src.Y);
       CT_Copy (Ctl, Dst.Z, Src.Z);
    end CT_Copy_Point;
-
-   ---------------------------------------------------------------
-   --  Constant-time lookup in the comb table (16 entries).
-   --  Returns the affine point as a Jacobian (Z = 1, or Z = 0
-   --  for the identity when Idx = 0).
-   ---------------------------------------------------------------
-
-   procedure Lookup_Comb
-     (T   : out P256_Jacobian;
-      Idx : in  U32)
-   is
-      M : U32;
-   begin
-      T := (X => FE_Zero, Y => FE_One, Z => FE_Zero);  --  identity
-
-      for K in 1 .. 15 loop
-         M := 0 - CT_EQ (Idx, U32 (K));
-         CT_Copy (M, T.X, Comb_G (K).X);
-         CT_Copy (M, T.Y, Comb_G (K).Y);
-      end loop;
-
-      --  Z = 1 for non-zero index (affine point), 0 for identity
-      T.Z := FE_One;
-      M := 0 - CT_EQ (Idx, 0);
-      CT_Copy (M, T.Z, FE_Zero);
-   end Lookup_Comb;
 
    ---------------------------------------------------------------
    --  Point doubling
@@ -417,7 +317,15 @@ is
    end P256_Encode;
 
    ---------------------------------------------------------------
-   --  Scalar multiplication (2-bit window)
+   --  Scalar multiplication, fixed 4-bit windows.
+   --
+   --  T (w) = [w]P for w in 1 .. 15 is built once (7 doublings and
+   --  7 additions), then every nibble of the scalar costs 4 doublings,
+   --  one constant-time table scan and one addition: 64 additions
+   --  for a 32-byte scalar against 128 with the previous 2-bit form.
+   --  The scan reads all 15 live entries for every nibble, and the
+   --  identity is tracked with the QZ / BNZ flags exactly as before,
+   --  so the operation sequence does not depend on the scalar.
    ---------------------------------------------------------------
 
    procedure P256_Mul
@@ -425,17 +333,29 @@ is
       X    : in     Byte_Seq;
       Xlen : in     N32)
    is
-      QZ          : U32;
-      P2, P3, Q   : P256_Jacobian;
-      T, U        : P256_Jacobian;
-      Bits, BNZ   : U32;
+      subtype Window is Natural range 0 .. 15;
+      type Point_Table is array (Window) of P256_Jacobian;
+
+      T           : Point_Table;
+      Q, U, Sel   : P256_Jacobian;
+      QZ, BNZ     : U32;
       Dummy       : U32;
    begin
-      --  Precompute P2 = 2P, P3 = 3P
-      P2 := P;
-      P256_Double (P2);
-      P3 := P;
-      P256_Add (P3, P2, Dummy);
+      --  T (0) is never a live selection (a zero window leaves Q
+      --  alone through the flags below); it holds P so that the scan
+      --  starts from well-formed data.
+      T (0) := P;
+      T (1) := P;
+      for W in 2 .. 15 loop
+         --  The branch is on the loop counter, not on any secret.
+         if W mod 2 = 0 then
+            T (W) := T (W / 2);
+            P256_Double (T (W));
+         else
+            T (W) := T (W - 1);
+            P256_Add (T (W), P, Dummy);
+         end if;
+      end loop;
 
       --  Start with Q = 0 (identity)
       Q := (X => FE_Zero, Y => FE_Zero, Z => FE_Zero);
@@ -445,22 +365,26 @@ is
          declare
             Bx : constant U32 := U32 (X (J));
          begin
-            --  Process 4 pairs of bits from byte (high to low)
-            for K_Pair in reverse 0 .. 3 loop
+            --  High nibble first, then low nibble
+            for Half in reverse 0 .. 1 loop
                declare
-                  Shift_Amt : constant Natural := Natural (K_Pair) * 2;
+                  W : constant U32 := Shift_Right (Bx, Half * 4) and 15;
                begin
                   P256_Double (Q);
                   P256_Double (Q);
+                  P256_Double (Q);
+                  P256_Double (Q);
 
-                  T := P;
+                  --  Constant-time select Sel := T (W)
+                  Sel := T (0);
+                  for K in 1 .. 15 loop
+                     CT_Copy_Point (CT_EQ (U32 (K), W), Sel, T (K));
+                  end loop;
+
+                  BNZ := CT_NEQ (W, 0);
                   U := Q;
-                  Bits := Shift_Right (Bx, Shift_Amt) and 3;
-                  BNZ := CT_NEQ (Bits, 0);
-                  CT_Copy_Point (CT_EQ (Bits, 2), T, P2);
-                  CT_Copy_Point (CT_EQ (Bits, 3), T, P3);
-                  P256_Add (U, T, Dummy);
-                  CT_Copy_Point (BNZ and QZ, Q, T);
+                  P256_Add (U, Sel, Dummy);
+                  CT_Copy_Point (BNZ and QZ, Q, Sel);
                   CT_Copy_Point (BNZ and (not QZ), Q, U);
                   QZ := QZ and (not BNZ);
                end;
@@ -471,33 +395,269 @@ is
    end P256_Mul;
 
    ---------------------------------------------------------------
-   --  Generator multiplication using comb method with 4 teeth.
+   --  Generator multiplication: fixed-base table, Booth-recoded
+   --  7-bit windows (SPARKTLSCrypto.P256.Fixed_Base).
    --
-   --  Scalar bits are arranged as 64 columns of 4 bits each,
-   --  where column i contains bits {i, i+64, i+128, i+192}.
-   --  Each column indexes into the 16-entry precomputed table.
-   --  Evaluation uses Horner's method: 63 doublings + 63 adds
-   --  instead of the old approach's 256 doublings + 64 adds.
+   --  The scalar is read as 37 overlapping 8-bit groups (bits 7i - 1 to
+   --  7i + 6, bit -1 and bits past 255 being 0) and each is recoded to
+   --  a signed digit d_i in -64 .. 64 with k = sum d_i * 2^(7 i). Window
+   --  i then adds |d_i| * 2^(7 i) * G, taken from the table by a
+   --  constant-time scan of all 64 entries, with y negated when d_i is
+   --  negative. No doublings; one lookup and at most one mixed addition
+   --  per window (46 windows, enough for a scalar blinded to 320 bits). The identity is tracked with the QZ / BNZ flags as in
+   --  P256_Mul, so the sequence of operations is fixed for every scalar.
+   --  For 0 < k < n a window's point can neither equal nor negate the
+   --  running sum (their magnitudes differ by more than n allows), so
+   --  the mixed addition never meets its doubling exception.
    ---------------------------------------------------------------
+
+   --  Entry Mag - 1 of window Win of the fixed-base table, or all zero
+   --  for Mag = 0, read without a data-dependent address: every entry is
+   --  visited and masked. The AVX2 tier does the same with vector
+   --  compares; the two agree on every (Win, Mag), which the smoke tests
+   --  check.
+   procedure Lookup_Fixed_Portable
+     (Sel : out Affine_Mont;
+      Win : in  Window_Index;
+      Mag : in  U32)
+   is
+      M : U32;
+   begin
+      Sel := (X => FE_Zero, Y => FE_Zero);
+      for K in Entry_Index loop
+         M := 0 - CT_EQ (Mag, U32 (K + 1));
+         CT_Copy (M, Sel.X, Fixed_G (Win) (K).X);
+         CT_Copy (M, Sel.Y, Fixed_G (Win) (K).Y);
+      end loop;
+   end Lookup_Fixed_Portable;
+
+   procedure Lookup_Fixed
+     (Sel : out Affine_Mont;
+      Win : in  Window_Index;
+      Mag : in  U32)
+   is
+   begin
+      --  The tier flag is fixed at elaboration: no data-dependent branch.
+      if SPARKTLSCrypto.CPU.Has_AVX2 then
+         SPARKTLSCrypto.P256_Gather_AVX2.Gather (Sel, Fixed_G (Win), Mag);
+      else
+         Lookup_Fixed_Portable (Sel, Win, Mag);
+      end if;
+   end Lookup_Fixed;
+
+   --  Shared body of P256_Mulgen and P256_Mulgen_Blinded: the scalar is
+   --  up to 40 bytes (a 256-bit key, or k + r n with a 64-bit r), and Lam
+   --  randomises the running point after every window (Lam = 1 leaves
+   --  the coordinates alone; the multiplies run either way).
+   procedure Mulgen_Core
+     (P    : out P256_Jacobian;
+      X    : in  Byte_Seq;
+      Xlen : in  N32;
+      Lam  : in  P256_FE)
+   with Pre => X'First = 0 and then X'Length <= 40 and then Xlen <= X'Length
+   is
+      --  Zero-padded scalar (always 40 bytes, big-endian)
+      S : Byte_Seq (0 .. 39) := (others => 0);
+      --  The same scalar as little-endian words; W (5) = 0 keeps the
+      --  extraction of the top window in bounds.
+      W : array (0 .. 5) of Unsigned_64 := (others => 0);
+
+      Q, T, U  : P256_Jacobian;
+      Sel      : Affine_Mont;
+      Neg_Y    : P256_FE;
+      Lam2, Lam3 : P256_FE;
+      QZ, BNZ  : U32;
+      Sgn, Mag : U32;
+      In8, D   : Unsigned_64;
+      Dummy    : U32;
+   begin
+      --  Copy scalar into zero-padded 40-byte buffer (right-aligned)
+      if Xlen <= 40 then
+         for I in 0 .. Xlen - 1 loop
+            S (40 - Xlen + I) := X (I);
+         end loop;
+      else
+         S := X (Xlen - 40 .. Xlen - 1);
+      end if;
+      for I in 0 .. 4 loop
+         for B in 0 .. 7 loop
+            W (I) := W (I) or
+              Shift_Left (Unsigned_64 (S (N32 (39 - 8 * I - B))), 8 * B);
+         end loop;
+      end loop;
+      Lam2 := Square_F256 (Lam);
+      Lam3 := Mul_F256 (Lam2, Lam);
+
+      Q := (X => FE_Zero, Y => FE_Zero, Z => FE_Zero);
+      QZ := 1;
+
+      for Win in Window_Index loop
+         --  Eight bits starting at bit 7 * Win - 1. The selection below
+         --  depends only on the window number, never on the scalar.
+         if Win = 0 then
+            In8 := Shift_Left (W (0), 1) and 16#FF#;
+         else
+            declare
+               Bit : constant Natural := 7 * Win - 1;
+               Qw  : constant Natural := Bit / 64;
+               Rb  : constant Natural := Bit mod 64;
+            begin
+               In8 := Shift_Right (W (Qw), Rb);
+               if Rb > 56 then
+                  In8 := In8 or Shift_Left (W (Qw + 1), 64 - Rb);
+               end if;
+               In8 := In8 and 16#FF#;
+            end;
+         end if;
+
+         --  Booth recoding: sign from the top bit; magnitude 0 .. 64
+         Sgn := U32 (Shift_Right (In8, 7));
+         D   := (In8 xor (0 - Unsigned_64 (Sgn))) and 16#FF#;
+         Mag := U32 (Shift_Right (D, 1) + (D and 1));
+
+         --  Constant-time lookup of |d| * 2^(7 Win) * G: every entry read
+         Lookup_Fixed (Sel, Win, Mag);
+         T.X := Sel.X;
+         T.Y := Sel.Y;
+         Neg_Y := Sub_F256 (FE_Zero, T.Y);
+         CT_Copy (0 - Sgn, T.Y, Neg_Y);
+         T.Z := FE_One;
+
+         BNZ := CT_NEQ (Mag, 0);
+         U := Q;
+         P256_Add_Mixed (U, T, Dummy);
+         CT_Copy_Point (BNZ and QZ, Q, T);
+         CT_Copy_Point (BNZ and (not QZ), Q, U);
+         QZ := QZ and (not BNZ);
+         --  Randomise the running point (the identity stays all zero)
+         Q.X := Mul_F256 (Q.X, Lam2);
+         Q.Y := Mul_F256 (Q.Y, Lam3);
+         Q.Z := Mul_F256 (Q.Z, Lam);
+      end loop;
+
+      P := Q;
+   end Mulgen_Core;
 
    procedure P256_Mulgen
      (P    : out P256_Jacobian;
       X    : in  Byte_Seq;
       Xlen : in  N32)
    is
-      --  Zero-padded scalar (always 32 bytes, big-endian)
-      S : Byte_Seq (0 .. 31) := (others => 0);
-
-      Q       : P256_Jacobian;
-      T, U    : P256_Jacobian;
-      QZ      : U32;
-      Idx     : U32;
-      BNZ     : U32;
-      Dummy   : U32;
-      Bit_Pos : Natural;
-      B0, B1, B2, B3 : U32;
    begin
-      --  Copy scalar into zero-padded 32-byte buffer (right-aligned)
+      Mulgen_Core (P, X, Xlen, FE_One);
+   end P256_Mulgen;
+
+   --  k + r * n as 40 big-endian bytes, and lambda as a field element
+   --  (1 if the random bytes reduce to 0).
+   procedure Blinding_Inputs
+     (K     : in  Bytes_32;
+      Blind : in  Byte_Seq;
+      KB    : out Byte_Seq;
+      Lam   : out P256_FE)
+   with Pre => Blind'First = 0 and then Blind'Length = 40
+               and then KB'First = 0 and then KB'Length = 40
+   is
+      use SPARKTLSCrypto.BigNat64;
+      NB, RB, KN, Res : Big_Nat;
+      N_Bytes : constant Byte_Seq (0 .. 31) :=
+        (16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#00#, 16#00#, 16#00#, 16#00#,
+         16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#, 16#FF#,
+         16#BC#, 16#E6#, 16#FA#, 16#AD#, 16#A7#, 16#17#, 16#9E#, 16#84#,
+         16#F3#, 16#B9#, 16#CA#, 16#C2#, 16#FC#, 16#63#, 16#25#, 16#51#);
+   begin
+      Decode (NB, N_Bytes);
+      Decode (KN, Byte_Seq (K));
+      Zero (RB, 4);
+      for I in 0 .. 7 loop
+         RB.W (0) := RB.W (0) or
+           Shift_Left (Unsigned_64 (Blind (N32 (7 - I))), 8 * I);
+      end loop;
+      if NB.Len = 4 and then KN.Len = 4 then
+         Mul_Add (Res, NB, RB, KN);        --  n * r + k, 8 words
+         Encode (KB, Res);                 --  low 40 bytes: value < 2^320
+      else
+         KB := (others => 0);
+      end if;
+      Bytes_To_FE (Lam, Blind (8 .. 39));
+      if FE_Is_Zero (Lam) then
+         Lam := FE_One;
+      end if;
+   end Blinding_Inputs;
+
+   procedure P256_Mulgen_Blinded
+     (P     : out P256_Jacobian;
+      K     : in  Bytes_32;
+      Blind : in  Byte_Seq)
+   is
+      KB  : Byte_Seq (0 .. 39);
+      Lam : P256_FE;
+   begin
+      Blinding_Inputs (K, Blind, KB, Lam);
+      Mulgen_Core (P, KB, 40, Lam);
+      --  Scrub the blinded scalar (it reveals k given r)
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "unused assignment");
+      KB := (others => 0);
+      pragma Inspection_Point (KB);
+      pragma Warnings (GNATprove, On, "unused assignment");
+      pragma Warnings (GNATprove, On, "statement has no effect");
+   end P256_Mulgen_Blinded;
+
+   procedure P256_Mul_Blinded
+     (P     : in out P256_Jacobian;
+      K     : in     Bytes_32;
+      Blind : in     Byte_Seq)
+   is
+      KB   : Byte_Seq (0 .. 39);
+      Lam, Lam2 : P256_FE;
+   begin
+      Blinding_Inputs (K, Blind, KB, Lam);
+      --  Randomise the input point's projective representation once;
+      --  every table entry and the running sum derive from it.
+      Lam2 := Square_F256 (Lam);
+      P.X := Mul_F256 (P.X, Lam2);
+      P.Y := Mul_F256 (P.Y, Mul_F256 (Lam2, Lam));
+      P.Z := Mul_F256 (P.Z, Lam);
+      P256_Mul (P, KB, 40);
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "unused assignment");
+      KB := (others => 0);
+      pragma Inspection_Point (KB);
+      pragma Warnings (GNATprove, On, "unused assignment");
+      pragma Warnings (GNATprove, On, "statement has no effect");
+   end P256_Mul_Blinded;
+
+   ---------------------------------------------------------------
+   --  Public-input scalar multiplication, for signature verification
+   --  only. Everything a verifier handles is public (the signature, the
+   --  hash, the key), so these two routines may branch and index on the
+   --  scalars, as BoringSSL's verify path does. The point arithmetic they
+   --  call is the same branch-free code as everywhere else, so an
+   --  invalid or unusual public key still takes one path. Never use
+   --  them with a secret scalar: P256_Mul and P256_Mulgen are the
+   --  constant-time entries for that.
+   ---------------------------------------------------------------
+
+   subtype NAF_Digit is Integer range -15 .. 15;
+   type NAF_Array is array (0 .. 257) of NAF_Digit;
+
+   --  Width-5 non-adjacent form of the scalar: odd digits in -15 .. 15
+   --  with no two adjacent non-zero digits, so at most one addition per
+   --  six doublings on average. Top is the index of the highest
+   --  non-zero digit, or -1 for the scalar 0.
+   procedure WNAF5
+     (X    : in  Byte_Seq;
+      Xlen : in  N32;
+      D    : out NAF_Array;
+      Top  : out Integer)
+   with Pre  => X'First = 0 and then X'Length <= 32 and then Xlen <= X'Length,
+        Post => Top >= -1 and then Top <= 257
+                and then (if Top >= 0 then D (Top) /= 0)
+   is
+      S : Byte_Seq (0 .. 31) := (others => 0);
+      K : array (0 .. 4) of Unsigned_64 := (others => 0);
+      V : Integer;
+   begin
       if Xlen <= 32 then
          for I in 0 .. Xlen - 1 loop
             S (32 - Xlen + I) := X (I);
@@ -505,50 +665,183 @@ is
       else
          S := X (Xlen - 32 .. Xlen - 1);
       end if;
-
-      Q := (X => FE_Zero, Y => FE_Zero, Z => FE_Zero);
-      QZ := 1;
-
-      --  Process columns 63 downto 0
-      --  Column i extracts bit i from each 64-bit quarter:
-      --    b0 = bit i of quarter 3 (bytes 24..31, LSB quarter)
-      --    b1 = bit i of quarter 2 (bytes 16..23)
-      --    b2 = bit i of quarter 1 (bytes 8..15)
-      --    b3 = bit i of quarter 0 (bytes 0..7, MSB quarter)
-      for Col in reverse 0 .. 63 loop
-         --  Always double Q (no branch on QZ). Doubling the point at
-         --  infinity (Z=0) gives O again — Z_new = 2*Y*Z stays 0 —
-         --  so doing it unconditionally is safe and ~1 extra
-         --  doubling per Mulgen on average. The previous `if QZ = 0
-         --  then ...` was a CT leak: K's leading-zero count
-         --  determined how many of these doublings were skipped, a
-         --  data-dependent timing variance dudect picked up.
-         P256_Double (Q);
-
-         --  Extract 4-bit column index from each quarter
-         Bit_Pos := Col mod 8;
-         declare
-            Byte_In_Q : constant N32 := N32 (7 - Col / 8);
-         begin
-            B0 := Shift_Right (U32 (S (24 + Byte_In_Q)), Bit_Pos) and 1;
-            B1 := Shift_Right (U32 (S (16 + Byte_In_Q)), Bit_Pos) and 1;
-            B2 := Shift_Right (U32 (S (8  + Byte_In_Q)), Bit_Pos) and 1;
-            B3 := Shift_Right (U32 (S (     Byte_In_Q)), Bit_Pos) and 1;
-         end;
-         Idx := B0 or Shift_Left (B1, 1) or Shift_Left (B2, 2)
-                or Shift_Left (B3, 3);
-
-         BNZ := CT_NEQ (Idx, 0);
-         Lookup_Comb (T, Idx);
-         U := Q;
-         P256_Add_Mixed (U, T, Dummy);
-         CT_Copy_Point (BNZ and QZ, Q, T);
-         CT_Copy_Point (BNZ and (not QZ), Q, U);
-         QZ := QZ and (not BNZ);
+      for I in 0 .. 3 loop
+         for B in 0 .. 7 loop
+            K (I) := K (I) or
+              Shift_Left (Unsigned_64 (S (N32 (31 - 8 * I - B))), 8 * B);
+         end loop;
       end loop;
 
+      D   := (others => 0);
+      Top := -1;
+      for I in D'Range loop
+         pragma Loop_Invariant (Top >= -1 and then Top < I);
+         pragma Loop_Invariant (if Top >= 0 then D (Top) /= 0);
+         if (K (0) and 1) = 1 then
+            --  K odd, so its residue mod 32 is odd: V is never 0
+            V := Integer (K (0) and 31);
+            if V >= 16 then
+               V := V - 32;
+            end if;
+            D (I) := V;
+            Top := I;
+            --  K := K - V; K stays non-negative (K is odd and V is K's
+            --  residue, possibly minus 32) and below 2^257.
+            if V > 0 then
+               declare
+                  Sub    : constant Unsigned_64 := Unsigned_64 (V);
+                  Borrow : Boolean := K (0) < Sub;
+               begin
+                  K (0) := K (0) - Sub;
+                  for J in 1 .. 4 loop
+                     exit when not Borrow;
+                     Borrow := K (J) = 0;
+                     K (J) := K (J) - 1;
+                  end loop;
+               end;
+            else
+               declare
+                  Add   : constant Unsigned_64 := Unsigned_64 (-V);
+                  Carry : Boolean;
+               begin
+                  Carry := K (0) > Unsigned_64'Last - Add;
+                  K (0) := K (0) + Add;
+                  for J in 1 .. 4 loop
+                     exit when not Carry;
+                     Carry := K (J) = Unsigned_64'Last;
+                     K (J) := K (J) + 1;
+                  end loop;
+               end;
+            end if;
+         end if;
+         --  K := K / 2
+         for J in 0 .. 3 loop
+            K (J) := Shift_Right (K (J), 1) or Shift_Left (K (J + 1), 63);
+         end loop;
+         K (4) := Shift_Right (K (4), 1);
+      end loop;
+   end WNAF5;
+
+   --  P := [x] * P for a public scalar: wNAF-5 over a table of the odd
+   --  multiples P, 3P, ..., 15P. For 0 < x < n the running sum never
+   --  equals plus or minus the table point being added (the partial
+   --  value is even or smaller than n permits), so the addition never
+   --  meets its doubling exception.
+   procedure P256_Mul_Public
+     (P    : in out P256_Jacobian;
+      X    : in     Byte_Seq;
+      Xlen : in     N32)
+   with Pre => X'First = 0 and then X'Length <= 32 and then Xlen <= X'Length
+   is
+      subtype Odd_Index is Natural range 0 .. 7;
+      type Odd_Table is array (Odd_Index) of P256_Jacobian;
+      T     : Odd_Table;
+      P2, Q : P256_Jacobian;
+      Sel   : P256_Jacobian;
+      D     : NAF_Array;
+      Top   : Integer;
+      Dummy : U32;
+   begin
+      WNAF5 (X, Xlen, D, Top);
+      if Top < 0 then
+         P := (X => FE_Zero, Y => FE_Zero, Z => FE_Zero);
+         return;
+      end if;
+
+      --  T (J) = (2 J + 1) P
+      T (0) := P;
+      P2 := P;
+      P256_Double (P2);
+      for J in 1 .. 7 loop
+         T (J) := T (J - 1);
+         P256_Add (T (J), P2, Dummy);
+      end loop;
+
+      Q := T ((abs D (Top) - 1) / 2);
+      if D (Top) < 0 then
+         Q.Y := Sub_F256 (FE_Zero, Q.Y);
+      end if;
+      for I in reverse 0 .. Top - 1 loop
+         P256_Double (Q);
+         if D (I) /= 0 then
+            Sel := T ((abs D (I) - 1) / 2);
+            if D (I) < 0 then
+               Sel.Y := Sub_F256 (FE_Zero, Sel.Y);
+            end if;
+            P256_Add (Q, Sel, Dummy);
+         end if;
+      end loop;
       P := Q;
-   end P256_Mulgen;
+   end P256_Mul_Public;
+
+   --  P := [x] * G for a public scalar: the fixed-base table indexed
+   --  directly by the Booth digit, no scan.
+   procedure P256_Mulgen_Public
+     (P    : out P256_Jacobian;
+      X    : in  Byte_Seq;
+      Xlen : in  N32)
+   with Pre => X'First = 0 and then X'Length <= 40 and then Xlen <= X'Length
+   is
+      S : Byte_Seq (0 .. 39) := (others => 0);
+      W : array (0 .. 5) of Unsigned_64 := (others => 0);
+      Q, T     : P256_Jacobian;
+      Started  : Boolean := False;
+      Sgn, Mag : U32;
+      In8, Dg  : Unsigned_64;
+      Dummy    : U32;
+   begin
+      if Xlen <= 40 then
+         for I in 0 .. Xlen - 1 loop
+            S (40 - Xlen + I) := X (I);
+         end loop;
+      else
+         S := X (Xlen - 40 .. Xlen - 1);
+      end if;
+      for I in 0 .. 4 loop
+         for B in 0 .. 7 loop
+            W (I) := W (I) or
+              Shift_Left (Unsigned_64 (S (N32 (39 - 8 * I - B))), 8 * B);
+         end loop;
+      end loop;
+
+      Q := (X => FE_Zero, Y => FE_Zero, Z => FE_Zero);
+      for Win in Window_Index loop
+         if Win = 0 then
+            In8 := Shift_Left (W (0), 1) and 16#FF#;
+         else
+            declare
+               Bit : constant Natural := 7 * Win - 1;
+               Qw  : constant Natural := Bit / 64;
+               Rb  : constant Natural := Bit mod 64;
+            begin
+               In8 := Shift_Right (W (Qw), Rb);
+               if Rb > 56 then
+                  In8 := In8 or Shift_Left (W (Qw + 1), 64 - Rb);
+               end if;
+               In8 := In8 and 16#FF#;
+            end;
+         end if;
+         Sgn := U32 (Shift_Right (In8, 7));
+         Dg  := (In8 xor (0 - Unsigned_64 (Sgn))) and 16#FF#;
+         Mag := U32 (Shift_Right (Dg, 1) + (Dg and 1));
+
+         if Mag /= 0 then
+            T.X := Fixed_G (Win) (Entry_Index (Mag - 1)).X;
+            T.Y := Fixed_G (Win) (Entry_Index (Mag - 1)).Y;
+            T.Z := FE_One;
+            if Sgn = 1 then
+               T.Y := Sub_F256 (FE_Zero, T.Y);
+            end if;
+            if Started then
+               P256_Add_Mixed (Q, T, Dummy);
+            else
+               Q := T;
+               Started := True;
+            end if;
+         end if;
+      end loop;
+      P := Q;
+   end P256_Mulgen_Public;
 
    ---------------------------------------------------------------
    --  Combined multiply-add: A := [x]*A + [y]*G
@@ -568,8 +861,11 @@ is
       Dummy  : U32;
    begin
       P256_Decode (PP, A, R);
-      P256_Mul (PP, X, Xlen);
-      P256_Mulgen (QQ, Y, Ylen);
+      --  Verification inputs are public: the wNAF and direct-index
+      --  paths; the decode above and every point operation stay
+      --  branch-free with respect to the key.
+      P256_Mul_Public (PP, X, Xlen);
+      P256_Mulgen_Public (QQ, Y, Ylen);
 
       --  Final addition (may fail if PP = QQ)
       P256_Add (PP, QQ, T);

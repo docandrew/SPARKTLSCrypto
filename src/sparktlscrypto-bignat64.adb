@@ -1,4 +1,6 @@
 with Interfaces; use Interfaces;
+with SPARKTLSCrypto.CPU;
+with SPARKTLSCrypto.BigNat64_ADX;
 
 package body SPARKTLSCrypto.BigNat64 with
    SPARK_Mode => On
@@ -215,7 +217,7 @@ is
    --  Montgomery multiplication: Result = A * B * R^(-1) mod M
    ----------------------------------------------------------------------------
 
-   procedure Monty_Mul
+   procedure Monty_Mul_Portable
      (Result : out Big_Nat;
       A, B   : in  Big_Nat;
       M      : in  Big_Nat;
@@ -232,26 +234,30 @@ is
             AU : constant Word := A.W (U);
             F  : constant Word :=
                (Result.W (0) + AU * B.W (0)) * M0I;
-            R1 : DWord := 0;
-            R2 : DWord := 0;
+            R1 : DWord;
+            R2 : DWord;
+            Z  : DWord;
+            T  : Word;
          begin
-            for V in 0 .. Len - 1 loop
+            --  Word 0 is peeled out of the loop: its low word is zero by
+            --  construction of F and is dropped, so the loop body below
+            --  stores every word unconditionally.
+            Z  := DWord (Result.W (0)) + DWord (AU) * DWord (B.W (0));
+            R1 := Shift_Right (Z, Word_Bits);
+            T  := Word (Z and Word_Mask);
+            Z  := DWord (T) + DWord (F) * DWord (M.W (0));
+            R2 := Shift_Right (Z, Word_Bits);
+
+            for V in 1 .. Len - 1 loop
                pragma Loop_Invariant (Result.Len = Len);
-               declare
-                  Z : DWord;
-                  T : Word;
-               begin
-                  Z := DWord (Result.W (V)) +
-                       DWord (AU) * DWord (B.W (V)) + R1;
-                  R1 := Shift_Right (Z, Word_Bits);
-                  T := Word (Z and Word_Mask);
-                  Z := DWord (T) +
-                       DWord (F) * DWord (M.W (V)) + R2;
-                  R2 := Shift_Right (Z, Word_Bits);
-                  if V > 0 then
-                     Result.W (V - 1) := Word (Z and Word_Mask);
-                  end if;
-               end;
+               Z := DWord (Result.W (V)) +
+                    DWord (AU) * DWord (B.W (V)) + R1;
+               R1 := Shift_Right (Z, Word_Bits);
+               T := Word (Z and Word_Mask);
+               Z := DWord (T) +
+                    DWord (F) * DWord (M.W (V)) + R2;
+               R2 := Shift_Right (Z, Word_Bits);
+               Result.W (V - 1) := Word (Z and Word_Mask);
             end loop;
 
             declare
@@ -263,16 +269,71 @@ is
          end;
       end loop;
 
-      --  Final reduction: if DH or Result >= M, subtract M
+      --  Final reduction: subtract M once if DH /= 0 or Result >= M.
+      --  Done in place over the Len active words rather than through
+      --  CT_Sub, which would build and copy two full Max_Words records
+      --  per call. Constant time: the borrow scan and the masked
+      --  subtraction both walk every word whatever the outcome.
       declare
-         Trial : constant Arith_Result := CT_Sub (Result, M, 0);
-         Final : constant Arith_Result := CT_Sub (Result, M,
-            CT_Neq (Word (DH and Word_Mask), 0) or
-            CT_Not (Trial.Carry));
+         Borrow : DWord := 0;
+         Ctl    : Word;
+         CC     : DWord := 0;
       begin
-         Result := Final.Value;
+         for I in 0 .. Len - 1 loop
+            pragma Loop_Invariant (Result.Len = Len);
+            declare
+               Diff : constant DWord :=
+                 DWord (Result.W (I)) - DWord (M.W (I)) - Borrow;
+            begin
+               Borrow := Shift_Right (Diff, 2 * Word_Bits - 1) and 1;
+            end;
+         end loop;
+         --  Borrow = 1 means Result < M as Len-word values
+         Ctl := CT_Neq (Word (DH and Word_Mask), 0) or
+                CT_Not (Word (Borrow));
+         for I in 0 .. Len - 1 loop
+            pragma Loop_Invariant (Result.Len = Len);
+            declare
+               Diff : constant DWord :=
+                 DWord (Result.W (I)) - DWord (M.W (I)) - CC;
+            begin
+               Result.W (I) :=
+                 CT_Mux (Ctl, Word (Diff and Word_Mask), Result.W (I));
+               CC := Shift_Right (Diff, 2 * Word_Bits - 1) and 1;
+            end;
+         end loop;
       end;
+   end Monty_Mul_Portable;
+
+   procedure Monty_Mul
+     (Result : out Big_Nat;
+      A, B   : in  Big_Nat;
+      M      : in  Big_Nat;
+      M0I    : in  Word)
+   is
+   begin
+      --  The flag is fixed at elaboration and the size is public, so
+      --  this branch depends on nothing secret.
+      if SPARKTLSCrypto.CPU.Has_BMI2_ADX and then M.Len mod 4 = 0 then
+         SPARKTLSCrypto.BigNat64_ADX.Monty_Mul (Result, A, B, M, M0I);
+      else
+         Monty_Mul_Portable (Result, A, B, M, M0I);
+      end if;
    end Monty_Mul;
+
+   procedure Monty_Sqr
+     (Result : out Big_Nat;
+      A      : in  Big_Nat;
+      M      : in  Big_Nat;
+      M0I    : in  Word)
+   is
+   begin
+      if SPARKTLSCrypto.CPU.Has_BMI2_ADX and then M.Len mod 4 = 0 then
+         SPARKTLSCrypto.BigNat64_ADX.Monty_Sqr (Result, A, M, M0I);
+      else
+         Monty_Mul_Portable (Result, A, A, M, M0I);
+      end if;
+   end Monty_Sqr;
 
    ----------------------------------------------------------------------------
    --  Modular exponentiation: Result = Base^Exp mod M
@@ -438,11 +499,12 @@ is
       --  8, hence of 4; the top windows of a short exponent are simply
       --  zero and cost the same as any other (constant time).
       Acc := One_M;
+      Zero (Sel, Len);
       declare
          N_Windows : constant N32 := Total_Bits / 4;
       begin
          for WI in 0 .. N_Windows - 1 loop
-            pragma Loop_Invariant (Acc.Len = Len);
+            pragma Loop_Invariant (Acc.Len = Len and Sel.Len = Len);
             declare
                --  Window WI covers bits [Total_Bits - 4 (WI + 1), Total_Bits - 4 WI)
                Bit0     : constant N32 := Total_Bits - 4 * (WI + 1);
@@ -451,23 +513,27 @@ is
                W        : constant Window :=
                  Window (Shift_Right (Word (Exp (Byte_Idx)), Shift) and 15);
             begin
-               for S in 1 .. 4 loop
-                  pragma Loop_Invariant (Acc.Len = Len);
-                  Monty_Mul (Tmp, Acc, Acc, M, M0I);
-                  Acc := Tmp;
-               end loop;
-               --  Constant-time table select: Sel := T (W)
-               Zero (Sel, Len);
-               for K in Window loop
+               --  Four squarings, ping-ponging between Acc and Tmp so
+               --  that no full-record copy is needed: an even count
+               --  lands the value back in Acc.
+               Monty_Sqr (Tmp, Acc, M, M0I);
+               Monty_Sqr (Acc, Tmp, M, M0I);
+               Monty_Sqr (Tmp, Acc, M, M0I);
+               Monty_Sqr (Acc, Tmp, M, M0I);
+               --  Constant-time table select: Sel := T (W). Every entry
+               --  is read for every word; the words above Len stay zero
+               --  from the Zero above.
+               for I in 0 .. Len - 1 loop
                   pragma Loop_Invariant (Sel.Len = Len);
                   declare
-                     --  CT_Eq yields 0/1; negate into an all-ones mask
-                     Mask : constant Word := -CT_Eq (Word (K), Word (W));
+                     Acc_W : Word := 0;
                   begin
-                     for I in 0 .. Len - 1 loop
-                        pragma Loop_Invariant (Sel.Len = Len);
-                        Sel.W (I) := Sel.W (I) or (Mask and T (K).W (I));
+                     for K in Window loop
+                        --  CT_Eq yields 0/1; negate into an all-ones mask
+                        Acc_W := Acc_W or
+                          ((-CT_Eq (Word (K), Word (W))) and T (K).W (I));
                      end loop;
+                     Sel.W (I) := Acc_W;
                   end;
                end loop;
                Monty_Mul (Tmp, Acc, Sel, M, M0I);
