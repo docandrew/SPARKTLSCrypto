@@ -13,8 +13,10 @@
 --  the scan reads the region without copying anything into it and skips
 --  the top Skip bytes, where its own small frame sits. Needles are
 --  random so that no window matches by accident. Run natively, not under
---  valgrind (memcheck marks popped stack inaccessible). A report, not a
---  gate: the counts are the numbers to drive down.
+--  valgrind (memcheck marks popped stack inaccessible). Exit status 1 if
+--  any primitive leaves a fragment, or if the negative control does not
+--  find all of its planted windows (then the scanner itself is broken and
+--  a zero would mean nothing). ci/residue.sh runs it as a gate.
 with Ada.Text_IO;                use Ada.Text_IO;
 with Ada.Command_Line;
 with System;
@@ -28,13 +30,17 @@ with SPARKTLSCrypto.RSA;
 with SPARKTLSCrypto.RFC6979;
 with SPARKTLSCrypto.X25519;
 with SPARKTLSCrypto.Ed25519;
+with MLKEM;
+with MLKEM.ML_KEM_768;
 
 procedure Residue_Scan is
    Scan_Bytes : constant := 262_144;   --  256 KB below the harness
    Skip       : constant := 512;       --  the scan's own frame
    Window     : constant := 8;         --  one 64-bit limb: catches lone spills
    Paint_Byte : constant Byte := 16#A5#;
-   Total_Hits : Natural := 0;
+   Total_Hits : Natural := 0;   --  primitives only, the control excluded
+   Ctl_Found  : Natural := 0;
+   Ctl_Want   : Natural := 0;
    Sink       : Byte := 0;
 
    type Needle_Ref is access constant Byte_Seq;
@@ -119,7 +125,8 @@ procedure Residue_Scan is
    end Deep;
 
    --  Paint, run the case below the spacer, then scan from here.
-   procedure Run (Name : String; Op : access procedure; Needles : Needle_Set; Names : String) is
+   procedure Run (Name : String; Op : access procedure; Needles : Needle_Set; Names : String;
+                  Is_Control : Boolean := False) is
       Marker  : Byte := 0;
       pragma Volatile (Marker);
       Res     : Result_Set;
@@ -139,7 +146,12 @@ procedure Residue_Scan is
                       & " windows found," & Res (N).Lo'Image & " .." & Res (N).Hi'Image & " bytes below the harness frame");
          end if;
       end loop;
-      Total_Hits := Total_Hits + Hits;
+      if Is_Control then
+         Ctl_Found := Hits;
+         Ctl_Want  := Res (1).Windows;
+      else
+         Total_Hits := Total_Hits + Hits;
+      end if;
    end Run;
 
    ---------------------------------------------------------------------
@@ -336,6 +348,55 @@ procedure Residue_Scan is
       Sink := Sink xor Local (5);
    end Case_Control;
 
+   --  ML-KEM-768 (sparkmlkem): the decryption key's secret half (dk_pke),
+   --  the implicit-rejection secret z, the seeds, the encapsulation coins
+   --  (which decapsulation recovers as m') and the shared secret. All
+   --  computed here, before any paint, from the same seeds the cases use.
+   ML_D  : constant Bytes_32 := Bytes_32 (Rand (32));
+   ML_Z  : constant Bytes_32 := Bytes_32 (Rand (32));
+   ML_M  : constant Bytes_32 := Bytes_32 (Rand (32));
+   ML_D_N : aliased constant Byte_Seq := Byte_Seq (ML_D);
+   ML_Z_N : aliased constant Byte_Seq := Byte_Seq (ML_Z);
+   ML_M_N : aliased constant Byte_Seq := Byte_Seq (ML_M);
+   --  Converted once, here: a conversion inside a case body would make a
+   --  temporary copy in that frame, which the scan would then find.
+   ML_D_M : constant MLKEM.Bytes_32 := MLKEM.Bytes_32 (ML_D);
+   ML_Z_M : constant MLKEM.Bytes_32 := MLKEM.Bytes_32 (ML_Z);
+   ML_M_M : constant MLKEM.Bytes_32 := MLKEM.Bytes_32 (ML_M);
+   function ML_Keypair return MLKEM.ML_KEM_768.MLKEM_Key is
+      K : MLKEM.ML_KEM_768.MLKEM_Key;
+   begin
+      MLKEM.ML_KEM_768.MLKEM_KeyGen (MLKEM.Bytes_32 (ML_D), MLKEM.Bytes_32 (ML_Z), K);
+      return K;
+   end ML_Keypair;
+   ML_Key  : constant MLKEM.ML_KEM_768.MLKEM_Key := ML_Keypair;
+   ML_Key2 : MLKEM.ML_KEM_768.MLKEM_Key;                    --  keygen case output
+   --  dk_pke is the first 384 * 3 bytes of dk; z the last 32.
+   ML_DK_PKE : aliased constant Byte_Seq := Byte_Seq (ML_Key.DK (0 .. 1151));
+   function ML_Encaps_SS return Byte_Seq is
+      SS : MLKEM.Bytes_32;
+      C  : MLKEM.ML_KEM_768.Ciphertext;
+   begin
+      MLKEM.ML_KEM_768.MLKEM_Encaps (ML_Key.EK, MLKEM.Bytes_32 (ML_M), SS, C);
+      return Byte_Seq (SS);
+   end ML_Encaps_SS;
+   ML_SS_N  : aliased constant Byte_Seq := ML_Encaps_SS;   --  the shared secret both sides derive
+   ML_CT    : MLKEM.ML_KEM_768.Ciphertext;                --  encaps case output, decaps case input
+   ML_SS_E  : MLKEM.Bytes_32;                              --  encaps case output
+   ML_SS_D  : MLKEM.Bytes_32;                              --  decaps case output
+   procedure Case_ML_KeyGen is
+   begin
+      MLKEM.ML_KEM_768.MLKEM_KeyGen (ML_D_M, ML_Z_M, ML_Key2);
+   end Case_ML_KeyGen;
+   procedure Case_ML_Encaps is
+   begin
+      MLKEM.ML_KEM_768.MLKEM_Encaps (ML_Key.EK, ML_M_M, ML_SS_E, ML_CT);
+   end Case_ML_Encaps;
+   procedure Case_ML_Decaps is
+   begin
+      MLKEM.ML_KEM_768.MLKEM_Decaps (ML_CT, ML_Key.DK, ML_SS_D);
+   end Case_ML_Decaps;
+
    --  Case bodies: nothing but the call.
    procedure Case_P256 is
    begin
@@ -382,7 +443,8 @@ begin
    RSA_CRT.QInv (0 .. 127) := K_QI;
 
    Put_Line ("=== stack residue scan:" & Integer'Image (Scan_Bytes / 1024) & " KB region, 8-byte fragments, random needles ===");
-   Run ("negative control  ", Case_Control'Access, (1 => Ctl_Secret'Access), "1=leaked copy; MUST be found");
+   Run ("negative control  ", Case_Control'Access, (1 => Ctl_Secret'Access), "1=leaked copy; MUST be found",
+        Is_Control => True);
    Run ("P-256 ECDSA sign  ", Case_P256'Access, (P256_D'Access, P256_K'Access), "1=d 2=k");
    Run ("P-384 ECDSA sign  ", Case_P384'Access, (P384_D'Access, P384_K'Access), "1=d 2=k");
    Run ("RFC 6979 P-256 k  ", Case_6979'Access, (1 => P256_D'Access), "1=d");
@@ -392,7 +454,21 @@ begin
    Run ("RSA-2048 PSS sign ", Case_RSA'Access,
         (RSA_P'Access, RSA_Q'Access, RSA_DP'Access, RSA_DQ'Access, RSA_QI'Access, RSA_D'Access),
         "1=p 2=q 3=dP 4=dQ 5=qInv 6=d");
-   Put_Line ("=== total residue fragments:" & Total_Hits'Image
+   Run ("ML-KEM-768 keygen ", Case_ML_KeyGen'Access, (ML_D_N'Access, ML_Z_N'Access, ML_DK_PKE'Access), "1=d 2=z 3=dk_pke");
+   Run ("ML-KEM-768 encaps ", Case_ML_Encaps'Access, (ML_M_N'Access, ML_SS_N'Access), "1=m (coins) 2=shared secret");
+   Run ("ML-KEM-768 decaps ", Case_ML_Decaps'Access, (ML_DK_PKE'Access, ML_Z_N'Access, ML_M_N'Access, ML_SS_N'Access),
+        "1=dk_pke 2=z 3=m' 4=shared secret");
+   Put_Line ("=== residue fragments in the primitives:" & Total_Hits'Image
+             & "; control found" & Ctl_Found'Image & " of" & Ctl_Want'Image
              & "  (ok flags:" & P256_OK'Image & P384_OK'Image & K6979_OK'Image & RSA_OK'Image & ", sink" & Sink'Image & ")");
-   Ada.Command_Line.Set_Exit_Status (0);
+   if Ctl_Found /= Ctl_Want or Ctl_Want = 0 then
+      Put_Line ("=== residue scan: FAIL (the control did not light up; the scanner is not seeing the stack)");
+      Ada.Command_Line.Set_Exit_Status (1);
+   elsif Total_Hits > 0 then
+      Put_Line ("=== residue scan: FAIL");
+      Ada.Command_Line.Set_Exit_Status (1);
+   else
+      Put_Line ("=== residue scan: PASS");
+      Ada.Command_Line.Set_Exit_Status (0);
+   end if;
 end Residue_Scan;

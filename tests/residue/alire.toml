@@ -4,5 +4,7 @@ description = "Stack-residue scan of the signing and key-agreement primitives"
 project-files = ["residue.gpr"]
 [[depends-on]]
 sparktlscrypto = "*"
+sparkmlkem = "*"
 [[pins]]
 sparktlscrypto = { path = "../.." }
+sparkmlkem = { path = "../../../sparkmlkem" }
