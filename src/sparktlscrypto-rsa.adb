@@ -14,28 +14,6 @@ is
    --  Forward declarations
    ----------------------------------------------------------------------------
 
-   procedure RSA_Public
-     (X       : in out Byte_Seq;
-      X_Len   : in     Natural;
-      Modulus : in     Byte_Seq;
-      Mod_Len : in     Natural;
-      Exp     : in     Unsigned_32;
-      --  OK: every check passed, INCLUDING 0 <= s < n (the CRT signer's
-      --  verify-after-sign consumes this one bit). Structural_OK: the
-      --  public checks alone (lengths, odd modulus, exponent), so a
-      --  verifier can branch on it without branching on the signature.
-      --  Reduced_Mask: all-ones iff 0 <= s < n, computed without a branch,
-      --  for the verifiers to fold into their accept/reject accumulator.
-      OK            :    out Boolean;
-      Structural_OK :    out Boolean;
-      Reduced_Mask  :    out SPARKTLSCrypto.BigNat64.Word)
-   with Always_Terminates,
-        Pre => X'First = 0 and X'Last < N32'Last
-               and Modulus'First = 0 and Modulus'Last < N32'Last
-               and Mod_Len <= Max_RSA_Bytes
-               and (Mod_Len = 0 or else N32 (Mod_Len) - 1 <= Modulus'Last)
-               and (X_Len = 0 or else N32 (X_Len) - 1 <= X'Last);
-
    procedure PSS_Verify
      (EM       : in     Byte_Seq;
       EM_Len   : in     Natural;
@@ -1022,14 +1000,6 @@ is
       CRT     : in     CRT_Params;
       Blind   : in     Bytes_16;
       OK      :    out Boolean)
-   with Pre => X'First = 0 and X'Last < N32'Last
-               and Modulus'First = 0 and Modulus'Last < N32'Last
-               and Mod_Len > 0 and Mod_Len <= Max_RSA_Bytes
-               and X_Len = Mod_Len
-               and N32 (Mod_Len) - 1 <= Modulus'Last
-               and N32 (X_Len) - 1 <= X'Last
-               and CRT.Prime_Len > 0
-               and 2 * Natural (CRT.Prime_Len) = Mod_Len
    is
       use BigNat64;
       PL  : constant N32 := CRT.Prime_Len;

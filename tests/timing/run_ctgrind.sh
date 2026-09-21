@@ -128,7 +128,12 @@ run_one ct_ed25519           clean || fail=1
 #  with k and dudect shows no timing dependence. Same category as
 #  ct_rsa_sign_crt. Any other count means a new key-dependent branch.
 run_one ct_p256_ecdsa        exact 1 || fail=1
-run_one ct_p384_ecdsa        clean || fail=1
+#  ct_p384_ecdsa: exactly ONE classified site, the on-curve check of the
+#  nonce point in P384.ECDSA.Sign (P384_Public_Key_Valid_Mask /= 0). The
+#  point is public (it becomes the signature's r) but memcheck taints it
+#  through the poisoned nonce and blind; its outcome does not vary with
+#  either. Same category as ct_p256_ecdsa's one site.
+run_one ct_p384_ecdsa        exact 1 || fail=1
 run_one ct_p384_ecdsa_verify clean || fail=1
 run_one ct_p256_ecdsa_verify clean || fail=1
 run_one ct_hkdf              clean || fail=1

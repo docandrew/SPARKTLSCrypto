@@ -1,0 +1,14 @@
+with "../../sparktlscrypto.gpr";
+
+project Residue is
+   for Create_Missing_Dirs use "True";
+   for Object_Dir use "obj";
+   for Exec_Dir use "bin";
+   for Source_Dirs use (".");
+   for Main use ("residue_scan.adb");
+
+   package Compiler is
+      --  -O0 so the paint and scan frames do exactly what the source says
+      for Default_Switches ("Ada") use ("-O0", "-g", "-gnatp", "-gnat2022");
+   end Compiler;
+end Residue;

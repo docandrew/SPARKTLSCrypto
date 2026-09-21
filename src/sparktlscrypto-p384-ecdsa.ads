@@ -4,6 +4,7 @@
 with SPARKNaCl;                use SPARKNaCl;
 with SPARKTLSCrypto.BigNat64;   use SPARKTLSCrypto.BigNat64;
 with SPARKTLSCrypto.P384.Field;
+with SPARKTLSCrypto.P384.Point;
 
 package SPARKTLSCrypto.P384.ECDSA with
    SPARK_Mode        => On
@@ -31,15 +32,22 @@ is
                and R'First = 0 and R'Length = 48
                and S'First = 0 and S'Length = 48;
 
+   --  Blind: Point.Blind_Len fresh random bytes; the nonce multiply runs
+   --  through Point.Scalar_Mul_Blinded (blinded scalar, randomised
+   --  coordinates). OK = False, with zero R_Out and S_Out, if the nonce
+   --  point fails the curve equation (a corrupted computation would
+   --  otherwise become a wrong signature that can leak the key).
    procedure Sign
      (Hash  : in     Bytes_48;
       D     : in     Byte_Seq;
       K     : in     Byte_Seq;
+      Blind : in     Byte_Seq;
       R_Out :    out Byte_Seq;
       S_Out :    out Byte_Seq;
       OK    :    out Boolean)
    with Pre    => D'First = 0 and D'Length = 48
                   and K'First = 0 and K'Length = 48
+                  and Blind'First = 0 and Blind'Length = Point.Blind_Len
                   and R_Out'First = 0 and R_Out'Length = 48
                   and S_Out'First = 0 and S_Out'Length = 48;
 

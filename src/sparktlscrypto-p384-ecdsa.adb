@@ -182,6 +182,7 @@ is
      (Hash  : in     Bytes_48;
       D     : in     Byte_Seq;
       K     : in     Byte_Seq;
+      Blind : in     Byte_Seq;
       R_Out :    out Byte_Seq;
       S_Out :    out Byte_Seq;
       OK    :    out Boolean)
@@ -199,14 +200,15 @@ is
       One                 : Big_Nat;
       G_Pt                : Jacobian;
       RX_Bytes            : Byte_Seq (0 .. 47);
+      RY_Bytes            : Byte_Seq (0 .. 47);
       --  Variables so that they can be scrubbed: both hold r*d + h.
       Add_Res             : Arith_Result;
       Sub_Res             : Arith_Result;
    begin
-      --  R_Out / S_Out are unconditionally set by the Encode calls at
-      --  the bottom; OK is set to True there too. No need for the
-      --  upfront defensive zeroing that the previous (early-return)
-      --  flow required.
+      R_Out := (others => 0);
+      S_Out := (others => 0);
+      OK := False;
+
       Decode (K_Int, K);
       Decode (D_Int, D);
       Decode (H_Int, Byte_Seq (Hash));
@@ -214,71 +216,80 @@ is
       D_Int.Len := N.Len;
       H_Int.Len := N.Len;
 
+      --  Blinded scalar and randomised coordinates for the nonce multiply
       Make_Generator (G_Pt);
-      Scalar_Mul (G_Pt, K);
+      Point.Scalar_Mul_Blinded (G_Pt, K, Blind);
       To_Affine (G_Pt);
 
       FE_From_Monty (T1, G_Pt.X);
       Encode (RX_Bytes, T1);
-      Decode (R_Int, RX_Bytes);
-      R_Int.Len := N.Len;
+      FE_From_Monty (T2, G_Pt.Y);
+      Encode (RY_Bytes, T2);
 
-      declare
-         Trial : constant Arith_Result := CT_Sub (R_Int, N, 1);
-         --  Use Trial.Value when R_Int >= N (Trial.Carry = 0). Done
-         --  via CT_Mux to avoid a secret-dependent branch.
-         Ctl   : constant Word := CT_Not (Trial.Carry);
-      begin
-         for I in 0 .. R_Int.Len - 1 loop
-            R_Int.W (I) := CT_Mux (Ctl, Trial.Value.W (I), R_Int.W (I));
-         end loop;
-      end;
+      --  The nonce point must satisfy the curve equation; a corrupted
+      --  table entry or a computation fault otherwise becomes a wrong
+      --  signature. Same check as the P-256 signer.
+      if Point.P384_Public_Key_Valid_Mask (RX_Bytes, RY_Bytes) /= 0 then
+         Decode (R_Int, RX_Bytes);
+         R_Int.Len := N.Len;
 
-      Zero (One, N.Len);
-      One.W (0) := 1;
+         declare
+            Trial : constant Arith_Result := CT_Sub (R_Int, N, 1);
+            --  Use Trial.Value when R_Int >= N (Trial.Carry = 0). Done
+            --  via CT_Mux to avoid a secret-dependent branch.
+            Ctl   : constant Word := CT_Not (Trial.Carry);
+         begin
+            for I in 0 .. R_Int.Len - 1 loop
+               R_Int.W (I) := CT_Mux (Ctl, Trial.Value.W (I), R_Int.W (I));
+            end loop;
+         end;
 
-      T1 := R_Int;
-      To_Monty (T1, N, N_M0I);
-      T2 := D_Int;
-      To_Monty (T2, N, N_M0I);
-      Mul_Mod_N (RD, T1, T2);
-      Mul_Mod_N (T1, RD, One);
-      RD := T1;
+         Zero (One, N.Len);
+         One.W (0) := 1;
 
-      declare
-         Ctl : Word;
-      begin
-         Add_Res := CT_Add (RD, H_Int, 1);
-         Sum := Add_Res.Value;
-         Sum.Len := N.Len;
-         --  Reduce: use Sub_Res.Value when (carry from add) OR
-         --  (Sum >= N, i.e. Sub_Res.Carry = 0). CT_Mux'd, branchless.
-         Sub_Res := CT_Sub (Sum, N, 1);
-         Ctl := CT_Neq (Add_Res.Carry, 0)
-                or CT_Eq (Sub_Res.Carry, 0);
-         for I in 0 .. Sum.Len - 1 loop
-            Sum.W (I) := CT_Mux (Ctl, Sub_Res.Value.W (I), Sum.W (I));
-         end loop;
-      end;
+         T1 := R_Int;
+         To_Monty (T1, N, N_M0I);
+         T2 := D_Int;
+         To_Monty (T2, N, N_M0I);
+         Mul_Mod_N (RD, T1, T2);
+         Mul_Mod_N (T1, RD, One);
+         RD := T1;
 
-      Inv_Mod_N (K_Inv, K_Int);
+         declare
+            Ctl : Word;
+         begin
+            Add_Res := CT_Add (RD, H_Int, 1);
+            Sum := Add_Res.Value;
+            Sum.Len := N.Len;
+            --  Reduce: use Sub_Res.Value when (carry from add) OR
+            --  (Sum >= N, i.e. Sub_Res.Carry = 0). CT_Mux'd, branchless.
+            Sub_Res := CT_Sub (Sum, N, 1);
+            Ctl := CT_Neq (Add_Res.Carry, 0)
+                   or CT_Eq (Sub_Res.Carry, 0);
+            for I in 0 .. Sum.Len - 1 loop
+               Sum.W (I) := CT_Mux (Ctl, Sub_Res.Value.W (I), Sum.W (I));
+            end loop;
+         end;
 
-      T1 := K_Inv;
-      To_Monty (T1, N, N_M0I);
-      T2 := Sum;
-      To_Monty (T2, N, N_M0I);
-      Mul_Mod_N (S_Int, T1, T2);
-      Mul_Mod_N (T1, S_Int, One);
-      S_Int := T1;
+         Inv_Mod_N (K_Inv, K_Int);
 
-      Encode (R_Out, R_Int);
-      Encode (S_Out, S_Int);
-      OK := True;
+         T1 := K_Inv;
+         To_Monty (T1, N, N_M0I);
+         T2 := Sum;
+         To_Monty (T2, N, N_M0I);
+         Mul_Mod_N (S_Int, T1, T2);
+         Mul_Mod_N (T1, S_Int, One);
+         S_Int := T1;
 
-      --  Scrub the nonce, the key, the inverse nonce, r*d and r*d + h in
-      --  every form they took, and the projective point [k]G (its Z
-      --  coordinate is a function of k). r, s, the hash and the constant
-      --  one are public.
+         Encode (R_Out, R_Int);
+         Encode (S_Out, S_Int);
+         OK := True;
+      end if;
+
+      --  Scrub, on both paths: the nonce, the key, the inverse nonce, r*d
+      --  and r*d + h in every form they took, and the projective point
+      --  [k]G (its Z coordinate is a function of k). r, s, the hash and
+      --  the constant one are public.
       pragma Warnings (GNATprove, Off, "statement has no effect");
       pragma Warnings (GNATprove, Off, "*is set by*");
       Sanitize (K_Int);

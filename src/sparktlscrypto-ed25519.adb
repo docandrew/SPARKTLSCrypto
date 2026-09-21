@@ -1293,6 +1293,14 @@ is
 
       --  Encode to 32 little-endian bytes
       FE_To_Bytes (U, Mont_U);
+
+      --  E is the clamped private scalar; the point and its coordinates
+      --  are functions of it. (The stack-residue scan found the E copy.)
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
+      SPARKNaCl.Sanitize (Byte_Seq (E));
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
    end Scalar_Mult_Base_To_Montgomery;
 
    function Test_ASR_8 (X : I64) return I64 is

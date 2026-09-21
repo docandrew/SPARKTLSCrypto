@@ -29,11 +29,14 @@ procedure Ct_P384_ECDSA is
 
    R_Out, S_Out : Byte_Seq (0 .. 47);
    OK : Boolean;
+   --  The blind is poisoned too: it must not steer any branch or index.
+   Blind : Byte_Seq (0 .. 55) := (others => 16#7E#);
 begin
    Ctgrind.Make_Undefined (D'Address, Interfaces.C.size_t (D'Length));
    Ctgrind.Make_Undefined (K'Address, Interfaces.C.size_t (K'Length));
+   Ctgrind.Make_Undefined (Blind'Address, Interfaces.C.size_t (Blind'Length));
 
-   SPARKTLSCrypto.P384.ECDSA.Sign (Hash, D, K, R_Out, S_Out, OK);
+   SPARKTLSCrypto.P384.ECDSA.Sign (Hash, D, K, Blind, R_Out, S_Out, OK);
 
    Ctgrind.Make_Defined
      (R_Out'Address, Interfaces.C.size_t (R_Out'Length));

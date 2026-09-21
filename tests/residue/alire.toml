@@ -1,0 +1,8 @@
+name = "sparktlscrypto_residue"
+version = "0.0.0"
+description = "Stack-residue scan of the signing and key-agreement primitives"
+project-files = ["residue.gpr"]
+[[depends-on]]
+sparktlscrypto = "*"
+[[pins]]
+sparktlscrypto = { path = "../.." }
