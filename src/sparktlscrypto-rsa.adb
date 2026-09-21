@@ -882,6 +882,12 @@ is
             Modpow (Result, A, E_Buf, M, M0I);
             Encode (X_Buf, Result);
          end;
+         --  E_Buf is a copy of the private exponent
+         pragma Warnings (GNATprove, Off, "statement has no effect");
+         pragma Warnings (GNATprove, Off, "*is set by*");
+         SPARKNaCl.Sanitize (E_Buf);
+         pragma Warnings (GNATprove, On, "*is set by*");
+         pragma Warnings (GNATprove, On, "statement has no effect");
 
          X (0 .. N32 (X_Len) - 1) := X_Buf;
       end;
@@ -1062,78 +1068,102 @@ is
       --  fault for such a key: R2_Mod / Ninv / Modpow_Top are proved free
       --  of runtime errors for any modulus.
 
-      Decode (M,  Modulus (0 .. N32 (Mod_Len) - 1));
-      Decode (P,  CRT.P (0 .. PL - 1));
-      Decode (Q,  CRT.Q (0 .. PL - 1));
-      Decode (QI, CRT.QInv (0 .. PL - 1));
-      Decode (XN, X (0 .. N32 (X_Len) - 1));
-
-      --  Size checks only (all on public lengths): balanced primes and a
-      --  modulus of exactly twice their size.
-      if P.Len = 0
-        or else Q.Len /= P.Len
-        or else QI.Len /= P.Len
-        or else 2 * P.Len /= M.Len
-        or else XN.Len /= M.Len
-      then
-         return;
-      end if;
-
-      P0I := Ninv (P.W (0));
-      Q0I := Ninv (Q.W (0));
-      R2_Mod (R2P, P, P0I);
-      R2_Mod (R2Q, Q, Q0I);
-
-      --  x mod p, x mod q
-      Mod_Reduce (XP, XN, P, P0I, R2P);
-      Mod_Reduce (XQ, XN, Q, Q0I, R2Q);
-
-      --  m1 = (x mod p)^dP mod p ; m2 = (x mod q)^dQ mod q
-      Zero (One, P.Len);
-      One.W (0) := 1;
-      PM1 := CT_Sub (P, One, 1).Value;   --  p odd: no borrow
-      QM1 := CT_Sub (Q, One, 1).Value;
-      Zero (K1, P.Len);
-      Zero (K2, P.Len);
-      for I in 0 .. 7 loop
-         K1.W (0) := K1.W (0) or
-           Shift_Left (Unsigned_64 (Blind (N32 (7 - I))), 8 * I);
-         K2.W (0) := K2.W (0) or
-           Shift_Left (Unsigned_64 (Blind (N32 (15 - I))), 8 * I);
-      end loop;
+      Decode (M,   Modulus (0 .. N32 (Mod_Len) - 1));
+      Decode (P,   CRT.P (0 .. PL - 1));
+      Decode (Q,   CRT.Q (0 .. PL - 1));
+      Decode (QI,  CRT.QInv (0 .. PL - 1));
+      Decode (XN,  X (0 .. N32 (X_Len) - 1));
       Decode (DPB, CRT.DP (0 .. PL - 1));
       Decode (DQB, CRT.DQ (0 .. PL - 1));
-      if DPB.Len /= P.Len or else DQB.Len /= P.Len then
-         return;
+
+      --  Size checks only (all on public lengths): balanced primes, CRT
+      --  exponents of the same size, and a modulus of exactly twice their
+      --  size. A mismatch falls through to the scrub with OK still False.
+      if P.Len > 0
+        and then Q.Len = P.Len
+        and then QI.Len = P.Len
+        and then DPB.Len = P.Len
+        and then DQB.Len = P.Len
+        and then 2 * P.Len = M.Len
+        and then XN.Len = M.Len
+      then
+         P0I := Ninv (P.W (0));
+         Q0I := Ninv (Q.W (0));
+         R2_Mod (R2P, P, P0I);
+         R2_Mod (R2Q, Q, Q0I);
+
+         --  x mod p, x mod q
+         Mod_Reduce (XP, XN, P, P0I, R2P);
+         Mod_Reduce (XQ, XN, Q, Q0I, R2Q);
+
+         --  m1 = (x mod p)^dP mod p ; m2 = (x mod q)^dQ mod q
+         Zero (One, P.Len);
+         One.W (0) := 1;
+         PM1 := CT_Sub (P, One, 1).Value;   --  p odd: no borrow
+         QM1 := CT_Sub (Q, One, 1).Value;
+         Zero (K1, P.Len);
+         Zero (K2, P.Len);
+         for I in 0 .. 7 loop
+            K1.W (0) := K1.W (0) or
+              Shift_Left (Unsigned_64 (Blind (N32 (7 - I))), 8 * I);
+            K2.W (0) := K2.W (0) or
+              Shift_Left (Unsigned_64 (Blind (N32 (15 - I))), 8 * I);
+         end loop;
+         Mul_Add (DPX, PM1, K1, DPB);   --  (p - 1) k1 + dP, 2 P.Len words
+         Mul_Add (DQX, QM1, K2, DQB);
+         --  Low PL + 8 bytes hold the whole value (< 2^(64 (P.Len + 1)))
+         Encode (EP (0 .. PL + 7), DPX);
+         Encode (EQ (0 .. PL + 7), DQX);
+         Modpow_Top (MP, XP, EP (0 .. PL + 7), P, P0I);
+         Modpow_Top (MQ, XQ, EQ (0 .. PL + 7), Q, Q0I);
+
+         --  h = qInv * (m1 - m2) mod p. m2 < q may exceed p, so reduce it
+         --  first; then a single borrow-corrected subtraction suffices.
+         Mod_Reduce (MQP, MQ, P, P0I, R2P);
+         Sub_Mod (T, MP, MQP, P);
+         Monty_Mul (QIM, QI, R2P, P, P0I);   --  qInv * R mod p
+         Monty_Mul (H, T, QIM, P, P0I);      --  (t * qInv * R) / R = t * qInv
+
+         --  m = m2 + h * q  (< p * q = n, so it fits Mod_Len bytes)
+         Mul_Add (Res, H, Q, MQ);
+         Encode (X (0 .. N32 (X_Len) - 1), Res);
+         OK := True;
       end if;
-      Mul_Add (DPX, PM1, K1, DPB);   --  (p - 1) k1 + dP, 2 P.Len words
-      Mul_Add (DQX, QM1, K2, DQB);
-      --  Low PL + 8 bytes hold the whole value (< 2^(64 (P.Len + 1)))
-      Encode (EP (0 .. PL + 7), DPX);
-      Encode (EQ (0 .. PL + 7), DQX);
-      Modpow_Top (MP, XP, EP (0 .. PL + 7), P, P0I);
-      Modpow_Top (MQ, XQ, EQ (0 .. PL + 7), Q, Q0I);
-      --  The blinded exponents are secret material
+
+      --  Scrub everything derived from p and q, on every path: the
+      --  primes, qInv and the CRT exponents, the blinded exponents in
+      --  both forms, the Montgomery constants, the half-results and the
+      --  recombination terms. n, x, the constant one and the signature
+      --  are public.
       pragma Warnings (GNATprove, Off, "statement has no effect");
-      pragma Warnings (GNATprove, Off, "unused assignment");
-      EP := (others => 0);
-      EQ := (others => 0);
-      pragma Inspection_Point (EP);
-      pragma Inspection_Point (EQ);
-      pragma Warnings (GNATprove, On, "unused assignment");
+      pragma Warnings (GNATprove, Off, "*is set by*");
+      Sanitize (P);
+      Sanitize (Q);
+      Sanitize (QI);
+      Sanitize (XP);
+      Sanitize (XQ);
+      Sanitize (MP);
+      Sanitize (MQ);
+      Sanitize (MQP);
+      Sanitize (T);
+      Sanitize (QIM);
+      Sanitize (H);
+      Sanitize (R2P);
+      Sanitize (R2Q);
+      Sanitize (PM1);
+      Sanitize (QM1);
+      Sanitize (K1);
+      Sanitize (K2);
+      Sanitize (DPB);
+      Sanitize (DQB);
+      Sanitize (DPX);
+      Sanitize (DQX);
+      Sanitize_Word (P0I);
+      Sanitize_Word (Q0I);
+      SPARKNaCl.Sanitize (EP);
+      SPARKNaCl.Sanitize (EQ);
+      pragma Warnings (GNATprove, On, "*is set by*");
       pragma Warnings (GNATprove, On, "statement has no effect");
-
-      --  h = qInv * (m1 - m2) mod p. m2 < q may exceed p, so reduce it
-      --  first; then a single borrow-corrected subtraction suffices.
-      Mod_Reduce (MQP, MQ, P, P0I, R2P);
-      Sub_Mod (T, MP, MQP, P);
-      Monty_Mul (QIM, QI, R2P, P, P0I);   --  qInv * R mod p
-      Monty_Mul (H, T, QIM, P, P0I);      --  (t * qInv * R) / R = t * qInv
-
-      --  m = m2 + h * q  (< p * q = n, so it fits Mod_Len bytes)
-      Mul_Add (Res, H, Q, MQ);
-      Encode (X (0 .. N32 (X_Len) - 1), Res);
-      OK := True;
    end RSA_Private_CRT;
 
    --  X := X^d mod n. Uses the CRT path when Pub_Exp and CRT allow it

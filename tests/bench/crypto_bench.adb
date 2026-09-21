@@ -193,6 +193,24 @@ begin
       Report ("X25519 Scalar_Mult", Sm, To_Duration (Clock - W0));
    end;
 
+   --  X25519 keygen: fixed-base via the Ed25519 table + Montgomery map
+   declare
+      N   : constant := 3000;
+      Sm  : Samples (1 .. N);
+      SK  : Bytes_32 := (16#77#, others => 16#42#);
+      Q   : Bytes_32;
+      T0  : Unsigned_64; W0 : constant Time := Clock;
+   begin
+      for I in 1 .. N loop
+         T0 := Rdtsc;
+         SPARKTLSCrypto.X25519.Scalar_Mult_Base (Q, SK);
+         Sm (I) := Rdtsc - T0;
+         SK (N32 (I mod 32)) := SK (N32 (I mod 32)) xor Q (0);
+      end loop;
+      Sink := Sink xor Q (0);
+      Report ("X25519 Scalar_Mult_Base", Sm, To_Duration (Clock - W0));
+   end;
+
    --  Ed25519
    declare
       N    : constant := 2000;

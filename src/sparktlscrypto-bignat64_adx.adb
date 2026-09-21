@@ -176,9 +176,13 @@ is
             Addr (B.W'Address), Addr (M.W'Address),
             Unsigned_64 (Len) * 8, M0I, Addr (Result.W'Address));
       Core (P);
-      --  Scratch held the unreduced product of possibly secret operands
+      --  Scratch held the unreduced product of possibly secret operands;
+      --  the parameter block holds M0I, which is -M^-1 mod 2^64 and so a
+      --  function of a secret modulus on the CRT path.
       Scratch (0 .. Len + 2) := (others => 0);
+      P := (others => 0);
       pragma Inspection_Point (Scratch);
+      pragma Inspection_Point (P);
    end Monty_Mul;
 
    ---------------------------------------------------------------------------
@@ -398,7 +402,9 @@ is
             Unsigned_64 (Len) * 8, M0I, Addr (Result.W'Address));
       Sqr_Core (P);
       T (0 .. 2 * Len + 1) := (others => 0);
+      P := (others => 0);
       pragma Inspection_Point (T);
+      pragma Inspection_Point (P);
    end Monty_Sqr;
 
    ---------------------------------------------------------------------------
@@ -817,11 +823,13 @@ is
       M    : in  Limbs_4;
       M0I  : in  Word)
    is
-      P : constant Gen4_Params :=
+      P : Gen4_Params :=
         (Addr (A'Address), Addr (B'Address), Addr (R'Address),
          M (0), M (1), M (2), M (3), M0I);
    begin
       Gen4_Core (P);
+      P := (others => 0);
+      pragma Inspection_Point (P);
    end Mont_Mul_4;
 
 end SPARKTLSCrypto.BigNat64_ADX;

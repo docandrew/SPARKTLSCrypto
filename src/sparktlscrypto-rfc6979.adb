@@ -217,6 +217,20 @@ is
       end loop;
 
       OK := Have = 1;
+
+      --  Scrub the DRBG state (K, V), the HMAC inputs (Buf carries the
+      --  private key), the last HMAC output and the candidate: any of
+      --  them reveals the nonce, and the nonce reveals the key.
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
+      Sanitize (Byte_Seq (V));
+      Sanitize (Byte_Seq (DRBG_Key));
+      Sanitize (Buf);
+      Sanitize (Retry_Buf);
+      Sanitize (Byte_Seq (Tmp));
+      Sanitize (Byte_Seq (Candidate));
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
    end Derive_K_P256;
 
    ----------------------------------------------------------------
@@ -304,6 +318,20 @@ is
       end loop;
 
       OK := Have = 1;
+
+      --  Scrub the DRBG state (K, V), the HMAC inputs (Buf carries the
+      --  private key), the last HMAC output and the candidate: any of
+      --  them reveals the nonce, and the nonce reveals the key.
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
+      Sanitize (Byte_Seq (V));
+      Sanitize (Byte_Seq (DRBG_Key));
+      Sanitize (Buf);
+      Sanitize (Retry_Buf);
+      Sanitize (Byte_Seq (Tmp));
+      Sanitize (Byte_Seq (Candidate));
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
    end Derive_K_P384;
 
 end SPARKTLSCrypto.RFC6979;

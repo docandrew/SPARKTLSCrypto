@@ -634,23 +634,43 @@ is
          R_Out := (others => 0);
          S_Out := (others => 0);
          OK := False;
-         return;
+      else
+         FE_To_Bytes (RX, Pt.X);
+         RX_Half := ECDSA_Sig_Half (RX);
+         Bytes_To_Scalar (R_S, RX_Half);
+         Reduce_Once (R_S);
+
+         --  s = k^(-1) * (hash + r*d) mod n
+         Mul_Mod_N (RD, R_S, D_S);
+         Add_Mod_N (Sum, H_S, RD);
+         Inv_Mod_N (K_Inv, K_S);
+         Mul_Mod_N (S_S, K_Inv, Sum);
+
+         Scalar_To_Bytes (R_Out, R_S);
+         Scalar_To_Bytes (S_Out, S_S);
+         OK := True;
       end if;
 
-      FE_To_Bytes (RX, Pt.X);
-      RX_Half := ECDSA_Sig_Half (RX);
-      Bytes_To_Scalar (R_S, RX_Half);
-      Reduce_Once (R_S);
-
-      --  s = k^(-1) * (hash + r*d) mod n
-      Mul_Mod_N (RD, R_S, D_S);
-      Add_Mod_N (Sum, H_S, RD);
-      Inv_Mod_N (K_Inv, K_S);
-      Mul_Mod_N (S_S, K_Inv, Sum);
-
-      Scalar_To_Bytes (R_Out, R_S);
-      Scalar_To_Bytes (S_Out, S_S);
-      OK := True;
+      --  Scrub, on both paths: the nonce, the key, the inverse nonce,
+      --  r*d and r*d + h, and the projective [k]G (its Z coordinate is a
+      --  function of k). r, s and the hash are public. To flow analysis
+      --  these are dead stores, which is the point.
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "unused assignment");
+      K_S   := (others => 0);
+      D_S   := (others => 0);
+      K_Inv := (others => 0);
+      RD    := (others => 0);
+      Sum   := (others => 0);
+      Pt    := (others => (others => 0));
+      pragma Inspection_Point (K_S);
+      pragma Inspection_Point (D_S);
+      pragma Inspection_Point (K_Inv);
+      pragma Inspection_Point (RD);
+      pragma Inspection_Point (Sum);
+      pragma Inspection_Point (Pt);
+      pragma Warnings (GNATprove, On, "unused assignment");
+      pragma Warnings (GNATprove, On, "statement has no effect");
    end Sign;
 
    ---------------------------------------------------------------

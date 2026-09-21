@@ -63,6 +63,18 @@ is
    --  Returns (A - B, borrow) if Ctl=1, (A, 0) if Ctl=0
    ----------------------------------------------------------------------------
 
+   procedure Sanitize (A : out Big_Nat) is
+   begin
+      A := (Len => 0, W => (others => 0));
+      pragma Inspection_Point (A);
+   end Sanitize;
+
+   procedure Sanitize_Word (W : out Word) is
+   begin
+      W := 0;
+      pragma Inspection_Point (W);
+   end Sanitize_Word;
+
    function CT_Sub
      (A, B : Big_Nat;
       Ctl  : Word) return Arith_Result
@@ -183,13 +195,14 @@ is
    is
       pragma Unreferenced (M0I);
       Total_Bits : constant Natural := M.Len * Word_Bits;
+      --  Both hold copies of A, which may be secret; scrubbed at the end.
+      Trial      : Arith_Result;
+      Final      : Arith_Result;
    begin
       for Bit in 1 .. Total_Bits loop
          pragma Loop_Invariant (A.Len = M.Len);
          declare
             Carry : Word := 0;
-            Trial : Arith_Result;
-            Final : Arith_Result;
          begin
             --  A := A * 2 (shift left by 1 bit)
             for J in 0 .. A.Len - 1 loop
@@ -211,6 +224,14 @@ is
             A := Final.Value;
          end;
       end loop;
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
+      Sanitize (Trial.Value);
+      Sanitize (Final.Value);
+      Sanitize_Word (Trial.Carry);
+      Sanitize_Word (Final.Carry);
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
    end To_Monty;
 
    ----------------------------------------------------------------------------
@@ -351,15 +372,16 @@ is
       Bits  : Natural := Word_Bits * Len;   --  R = 2^Bits; we want 2^(2 Bits) mod M
       Odd   : Natural;               --  Bits = Odd * 2^J
       J     : Natural := 0;
+      --  Intermediates are functions of M, a secret prime on the CRT
+      --  path; all are scrubbed at the end.
+      Trial : Arith_Result;
+      Final : Arith_Result;
+      Sq    : Big_Nat;
    begin
       --  R mod M = 2^Bits - M  (M has its top bit set, so this is < M
       --  and non-negative): 0 - M with the borrow discarded.
       Zero (Z, Len);
-      declare
-         Neg : constant Arith_Result := CT_Sub (Z, M, 1);
-      begin
-         T := Neg.Value;
-      end;
+      T := CT_Sub (Z, M, 1).Value;
       pragma Assert (T.Len = Len);
 
       --  Factor Bits = Odd * 2^J
@@ -379,8 +401,6 @@ is
          pragma Loop_Invariant (T.Len = Len);
          declare
             Carry : Word := 0;
-            Trial : Arith_Result;
-            Final : Arith_Result;
          begin
             for K in 0 .. Len - 1 loop
                pragma Loop_Invariant (T.Len = Len);
@@ -402,14 +422,20 @@ is
       --  J of them turn 2^(Bits + Odd) into 2^(Bits + Odd * 2^J) = R^2.
       for S in 1 .. J loop
          pragma Loop_Invariant (T.Len = Len);
-         declare
-            Sq : Big_Nat;
-         begin
-            Monty_Mul (Sq, T, T, M, M0I);
-            T := Sq;
-         end;
+         Monty_Mul (Sq, T, T, M, M0I);
+         T := Sq;
       end loop;
       R2 := T;
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
+      Sanitize (T);
+      Sanitize (Sq);
+      Sanitize (Trial.Value);
+      Sanitize (Final.Value);
+      Sanitize_Word (Trial.Carry);
+      Sanitize_Word (Final.Carry);
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
    end R2_Mod;
 
    procedure Modpow_Public
@@ -546,6 +572,20 @@ is
       Zero (One, Len);
       One.W (0) := 1;
       Monty_Mul (Result, Acc, One, M, M0I);
+
+      --  Scrub: the table holds powers of the base (the ECDSA nonce for
+      --  the scalar inversion, x mod p on the CRT path), Acc and Tmp the
+      --  partial results, Sel the last selected entry.
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
+      for K in Window loop
+         Sanitize (T (K));
+      end loop;
+      Sanitize (Acc);
+      Sanitize (Tmp);
+      Sanitize (Sel);
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
    end Modpow_Core;
 
    procedure Modpow
@@ -581,6 +621,14 @@ is
          To_Monty (One_M, M, M0I);
       end if;
       Modpow_Core (Result, Base_M, One_M, Exp, M, M0I);
+      --  The modulus is public here but the base need not be (the P-384
+      --  scalar inversion passes the nonce).
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
+      Sanitize (Base_M);
+      Sanitize (One_M);
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
    end Modpow;
 
    procedure Modpow_Top
@@ -601,6 +649,14 @@ is
       Zero (Z, Len);
       One_M := CT_Sub (Z, M, 1).Value;
       Modpow_Core (Result, Base_M, One_M, Exp, M, M0I);
+      --  M is a CRT prime: R mod M and R^2 mod M give it away directly.
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
+      Sanitize (Base_M);
+      Sanitize (One_M);
+      Sanitize (R2);
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
    end Modpow_Top;
 
    ----------------------------------------------------------------------------
@@ -663,6 +719,11 @@ is
       B   : Big_Nat;
       S   : Big_Nat;
       One : Big_Nat;
+      --  Variables rather than declare-block constants so that they can
+      --  be scrubbed: on the CRT path X and M are both secret.
+      Sum   : Arith_Result;
+      Trial : Arith_Result;
+      Final : Arith_Result;
    begin
       --  X = Hi * R + Lo, both halves as Len-word values. Words of X
       --  above X.Len are zero, so a short X simply has Hi = 0.
@@ -683,29 +744,53 @@ is
       Monty_Mul (B, Hi, R3, M, M0I);
 
       --  S = A + B mod M: both terms are < M, so at most one subtraction.
-      declare
-         Sum   : constant Arith_Result := CT_Add (A, B, 1);
-         Trial : constant Arith_Result := CT_Sub (Sum.Value, M, 0);
-         Final : constant Arith_Result := CT_Sub (Sum.Value, M,
-            CT_Neq (Sum.Carry, 0) or CT_Not (Trial.Carry));
-      begin
-         S := Final.Value;
-      end;
+      Sum   := CT_Add (A, B, 1);
+      Trial := CT_Sub (Sum.Value, M, 0);
+      Final := CT_Sub (Sum.Value, M, CT_Neq (Sum.Carry, 0) or CT_Not (Trial.Carry));
+      S := Final.Value;
 
       --  S = X * R mod M; leave the Montgomery domain.
       Zero (One, Len);
       One.W (0) := 1;
       Monty_Mul (Result, S, One, M, M0I);
+
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
+      Sanitize (Lo);
+      Sanitize (Hi);
+      Sanitize (R3);
+      Sanitize (A);
+      Sanitize (B);
+      Sanitize (S);
+      Sanitize (Sum.Value);
+      Sanitize (Trial.Value);
+      Sanitize (Final.Value);
+      Sanitize_Word (Sum.Carry);
+      Sanitize_Word (Trial.Carry);
+      Sanitize_Word (Final.Carry);
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
    end Mod_Reduce;
 
    procedure Sub_Mod
      (Result  : out Big_Nat;
       A, B, M : in  Big_Nat)
    is
-      Diff  : constant Arith_Result := CT_Sub (A, B, 1);
-      Fixed : constant Arith_Result := CT_Add (Diff.Value, M, Diff.Carry);
+      Diff  : Arith_Result;
+      Fixed : Arith_Result;
    begin
+      Diff  := CT_Sub (A, B, 1);
+      Fixed := CT_Add (Diff.Value, M, Diff.Carry);
       Result := Fixed.Value;
+      --  m1 - m2 mod p on the CRT path
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
+      Sanitize (Diff.Value);
+      Sanitize (Fixed.Value);
+      Sanitize_Word (Diff.Carry);
+      Sanitize_Word (Fixed.Carry);
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
    end Sub_Mod;
 
 end SPARKTLSCrypto.BigNat64;
