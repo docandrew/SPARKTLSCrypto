@@ -398,17 +398,21 @@ is
    --  Generator multiplication: fixed-base table, Booth-recoded
    --  7-bit windows (SPARKTLSCrypto.P256.Fixed_Base).
    --
-   --  The scalar is read as 37 overlapping 8-bit groups (bits 7i - 1 to
-   --  7i + 6, bit -1 and bits past 255 being 0) and each is recoded to
-   --  a signed digit d_i in -64 .. 64 with k = sum d_i * 2^(7 i). Window
-   --  i then adds |d_i| * 2^(7 i) * G, taken from the table by a
+   --  The scalar is read as 46 overlapping 8-bit groups (bits 7i - 1 to
+   --  7i + 6, bit -1 and bits past the top being 0) and each is recoded
+   --  to a signed digit d_i in -64 .. 64 with k = sum d_i * 2^(7 i).
+   --  Window i then adds |d_i| * 2^(7 i) * G, taken from the table by a
    --  constant-time scan of all 64 entries, with y negated when d_i is
    --  negative. No doublings; one lookup and at most one mixed addition
-   --  per window (46 windows, enough for a scalar blinded to 320 bits). The identity is tracked with the QZ / BNZ flags as in
-   --  P256_Mul, so the sequence of operations is fixed for every scalar.
-   --  For 0 < k < n a window's point can neither equal nor negate the
-   --  running sum (their magnitudes differ by more than n allows), so
-   --  the mixed addition never meets its doubling exception.
+   --  per window (46 windows cover a scalar blinded to 320 bits). The
+   --  identity is tracked with the QZ / BNZ flags as in P256_Mul, so the
+   --  sequence of operations is fixed for every scalar.
+   --  A window's point equal to, or the negative of, the running sum
+   --  would meet the mixed addition's doubling exception and yield a
+   --  wrong point. For an unblinded 0 < k < n it cannot happen (the
+   --  magnitudes differ by more than n allows); for a blinded k + r n
+   --  it can, with probability about 2^-249 per window, and the on-curve
+   --  check in the ECDSA signer then fails closed.
    ---------------------------------------------------------------
 
    --  Entry Mag - 1 of window Win of the fixed-base table, or all zero

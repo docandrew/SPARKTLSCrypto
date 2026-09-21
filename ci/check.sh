@@ -10,3 +10,4 @@ export NO_COLOR=1
 ci/versions.sh
 ci/build.sh
 ci/smoke.sh
+ci/residue.sh

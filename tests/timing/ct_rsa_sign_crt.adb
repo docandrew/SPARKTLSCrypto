@@ -20,7 +20,8 @@ with Ctgrind;
 --  (big-endian, left-padded to 256/128 bytes). The keys exist only in
 --  this test source and protect nothing.
 procedure Ct_RSA_Sign_CRT is
-   Blind : constant Bytes_16 := (others => 16#42#);
+   --  Poisoned below, with the key: the blind must steer nothing either.
+   Blind : Bytes_16 := (others => 16#42#);
    K_N : constant Byte_Seq (0 .. 255) :=
      (
       16#AF#, 16#E1#, 16#93#, 16#8C#, 16#CD#, 16#80#, 16#C4#, 16#BC#, 16#60#, 16#22#, 16#0B#, 16#9A#,
@@ -153,6 +154,7 @@ begin
    Ctgrind.Make_Undefined (CRT.DP (0)'Address, 128);
    Ctgrind.Make_Undefined (CRT.DQ (0)'Address, 128);
    Ctgrind.Make_Undefined (CRT.QInv (0)'Address, 128);
+   Ctgrind.Make_Undefined (Blind'Address, Interfaces.C.size_t (Blind'Length));
    SPARKTLSCrypto.RSA.Sign_PSS
      (M_Hash => Byte_Seq (Hash), Hash_Len => 32,
       Hash_Alg => SPARKTLSCrypto.RSA.PSS_SHA256,

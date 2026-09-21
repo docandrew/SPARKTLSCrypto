@@ -21,6 +21,8 @@ with SPARKTLSCrypto.Hashing.SHA256;
 with SPARKTLSCrypto.HKDF;
 with SPARKTLSCrypto.MAC;
 with SPARKTLSCrypto.Base64;
+with SPARKTLSCrypto.P384.ECDSA;
+with SPARKTLSCrypto.P384.Point;
 with SPARKTLSCrypto.RFC6979;
 with SPARKTLSCrypto.RSA;
 with SPARKTLSCrypto.X25519;
@@ -580,6 +582,52 @@ procedure Smoke_Tests is
    --  The buffer-based Base64 decode (the entry library code uses; no
    --  secondary stack) must agree with the String-returning one on the
    --  RFC 4648 section 10 vectors, including both padding shapes.
+   --  P-384 blinding: the blinded generator multiply, ECDHE and ECDSA
+   --  sign must agree with the unblinded entries (and with each other
+   --  across blinds), and the signature must verify.
+   procedure Test_P384_Blinding is
+      use SPARKTLSCrypto.P384.Point;
+      SK_A : constant Byte_Seq (0 .. 47) := (16#33#, others => 16#5A#);
+      SK_B : constant Byte_Seq (0 .. 47) := (16#71#, others => 16#C3#);
+      Blind_1 : Byte_Seq (0 .. 55) := (others => 16#7E#);
+      Blind_2 : Byte_Seq (0 .. 55) := (others => 16#11#);
+      PK_A, PK_A1, PK_A2, PK_B : Byte_Seq (0 .. 96);
+      SS_P, SS_1, SS_2 : Bytes_48;
+      OK_P, OK_1, OK_2 : Boolean;
+      Hash : constant Bytes_48 := (others => 16#42#);
+      K    : Bytes_48;
+      K_OK : Boolean;
+      R1, S1, R2, S2 : Byte_Seq (0 .. 47);
+      OK_S1, OK_S2 : Boolean;
+      X : Unsigned_64 := 16#D1B5_4A32_D192_ED03#;
+   begin
+      for I in Blind_1'Range loop
+         X := X xor Shift_Left (X, 13); X := X xor Shift_Right (X, 7); X := X xor Shift_Left (X, 17);
+         Blind_1 (I) := Byte (X and 255);
+         X := X xor Shift_Left (X, 13); X := X xor Shift_Right (X, 7); X := X xor Shift_Left (X, 17);
+         Blind_2 (I) := Byte (X and 255);
+      end loop;
+      P384_Mulgen (PK_A, SK_A);
+      P384_Mulgen_Blinded (PK_A1, SK_A, Blind_1);
+      P384_Mulgen_Blinded (PK_A2, SK_A, Blind_2);
+      Check ("p384 blinded mulgen = plain (blind 1)", Equal (PK_A, PK_A1));
+      Check ("p384 blinded mulgen = plain (blind 2)", Equal (PK_A, PK_A2));
+      P384_Mulgen (PK_B, SK_B);
+      P384_ECDHE (SS_P, OK_P, SK_A, PK_B);
+      P384_ECDHE_Blinded (SS_1, OK_1, SK_A, PK_B, Blind_1);
+      P384_ECDHE_Blinded (SS_2, OK_2, SK_A, PK_B, Blind_2);
+      Check ("p384 blinded ecdhe = plain", (OK_P and OK_1 and OK_2)
+             and then Equal (SS_P, SS_1) and then Equal (SS_P, SS_2));
+      SPARKTLSCrypto.RFC6979.Derive_K_P384 (Bytes_48 (SK_A), Hash, K, K_OK);
+      SPARKTLSCrypto.P384.ECDSA.Sign (Hash, SK_A, Byte_Seq (K), Blind_1, R1, S1, OK_S1);
+      SPARKTLSCrypto.P384.ECDSA.Sign (Hash, SK_A, Byte_Seq (K), Blind_2, R2, S2, OK_S2);
+      Check ("p384 sign: same signature under two blinds",
+             (K_OK and OK_S1 and OK_S2) and then Equal (R1, R2) and then Equal (S1, S2));
+      Check ("p384 sign: signature verifies",
+             OK_S1 and then SPARKTLSCrypto.P384.ECDSA.Verify
+               (Hash, PK_A (1 .. 48), PK_A (49 .. 96), R1, S1));
+   end Test_P384_Blinding;
+
    --  The buffer-based Base64 procedures (the only entry points; no
    --  secondary stack) against the RFC 4648 section 10 vectors, both
    --  padding shapes included, and encode/decode round trips.
@@ -829,6 +877,7 @@ begin
    Test_X25519;
    Test_RFC6979;
    Test_Base64;
+   Test_P384_Blinding;
    Test_Ed25519_ASR;
    Test_AES_GCM_Roundtrip;
    Test_ChaCha20_Poly1305_Smoke;

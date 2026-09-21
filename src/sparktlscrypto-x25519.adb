@@ -212,6 +212,40 @@ is
       for I in Index_32 loop
          Q (I) := Q (I) and Clear_Mask;
       end loop;
+
+      --  Scrub the clamped scalar and the ladder state; every ladder
+      --  value is a function of the scalar. (The stack-residue scan found
+      --  the E copy; the rest is the same class.) To flow analysis these
+      --  are dead stores, which is the point.
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "unused assignment");
+      pragma Warnings (GNATprove, Off, "*is set by*");
+      SPARKNaCl.Sanitize (Byte_Seq (E));
+      X2 := (others => 0);
+      Z2 := (others => 0);
+      X3 := (others => 0);
+      Z3 := (others => 0);
+      A  := (others => 0);
+      AA := (others => 0);
+      B  := (others => 0);
+      BB := (others => 0);
+      CB := (others => 0);
+      DA := (others => 0);
+      T  := (others => 0);
+      pragma Inspection_Point (X2);
+      pragma Inspection_Point (Z2);
+      pragma Inspection_Point (X3);
+      pragma Inspection_Point (Z3);
+      pragma Inspection_Point (A);
+      pragma Inspection_Point (AA);
+      pragma Inspection_Point (B);
+      pragma Inspection_Point (BB);
+      pragma Inspection_Point (CB);
+      pragma Inspection_Point (DA);
+      pragma Inspection_Point (T);
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "unused assignment");
+      pragma Warnings (GNATprove, On, "statement has no effect");
    end Scalar_Mult;
 
    procedure Test_FE_Mul

@@ -9,6 +9,7 @@
 --  Supports SHA-256, SHA-384, and SHA-512 hash variants.
 
 with SPARKNaCl; use SPARKNaCl;
+with SPARKTLSCrypto.BigNat64;
 
 package SPARKTLSCrypto.RSA with
    SPARK_Mode => On
@@ -208,6 +209,56 @@ is
    end record;
 
    No_CRT : constant CRT_Params := (others => <>);
+
+   --  The public operation X := X^e mod n. Public so that the tests can
+   --  check the CRT primitive below independently of the signers.
+   procedure RSA_Public
+     (X       : in out Byte_Seq;
+      X_Len   : in     Natural;
+      Modulus : in     Byte_Seq;
+      Mod_Len : in     Natural;
+      Exp     : in     Unsigned_32;
+      --  OK: every check passed, INCLUDING 0 <= s < n (the CRT signer's
+      --  verify-after-sign consumes this one bit). Structural_OK: the
+      --  public checks alone (lengths, odd modulus, exponent), so a
+      --  verifier can branch on it without branching on the signature.
+      --  Reduced_Mask: all-ones iff 0 <= s < n, computed without a branch,
+      --  for the verifiers to fold into their accept/reject accumulator.
+      OK            :    out Boolean;
+      Structural_OK :    out Boolean;
+      Reduced_Mask  :    out SPARKTLSCrypto.BigNat64.Word)
+   with Always_Terminates,
+        Pre => X'First = 0 and X'Last < N32'Last
+               and Modulus'First = 0 and Modulus'Last < N32'Last
+               and Mod_Len <= Max_RSA_Bytes
+               and (Mod_Len = 0 or else N32 (Mod_Len) - 1 <= Modulus'Last)
+               and (X_Len = 0 or else N32 (X_Len) - 1 <= X'Last);
+
+   --  The CRT half of the private operation on its own: X := X^d mod n
+   --  computed as m1 = X^dP mod p, m2 = X^dQ mod q, Garner recombination,
+   --  with the exponents blinded by Blind (dP + k1 (p - 1), dQ + k2
+   --  (q - 1)). OK = False on a shape mismatch (unbalanced primes, CRT
+   --  exponents of the wrong size), in which case X is unchanged. The
+   --  signing entries below call this first and re-encrypt the result
+   --  with the public exponent before emitting it; this entry is public
+   --  so that the tests can prove that the blinded CRT path, and not the
+   --  plain fallback, produced a signature.
+   procedure RSA_Private_CRT
+     (X       : in out Byte_Seq;
+      X_Len   : in     Natural;
+      Modulus : in     Byte_Seq;
+      Mod_Len : in     Natural;
+      CRT     : in     CRT_Params;
+      Blind   : in     Bytes_16;
+      OK      :    out Boolean)
+   with Pre => X'First = 0 and X'Last < N32'Last
+               and Modulus'First = 0 and Modulus'Last < N32'Last
+               and Mod_Len > 0 and Mod_Len <= Max_RSA_Bytes
+               and X_Len = Mod_Len
+               and N32 (Mod_Len) - 1 <= Modulus'Last
+               and N32 (X_Len) - 1 <= X'Last
+               and CRT.Prime_Len > 0
+               and 2 * Natural (CRT.Prime_Len) = Mod_Len;
 
    --  Sign a message hash using RSA-PSS-RSAE.
    --
