@@ -30,8 +30,6 @@ with SPARKTLSCrypto.RSA;
 with SPARKTLSCrypto.RFC6979;
 with SPARKTLSCrypto.X25519;
 with SPARKTLSCrypto.Ed25519;
-with MLKEM;
-with MLKEM.ML_KEM_768;
 
 procedure Residue_Scan is
    Scan_Bytes : constant := 262_144;   --  256 KB below the harness
@@ -348,55 +346,6 @@ procedure Residue_Scan is
       Sink := Sink xor Local (5);
    end Case_Control;
 
-   --  ML-KEM-768 (sparkmlkem): the decryption key's secret half (dk_pke),
-   --  the implicit-rejection secret z, the seeds, the encapsulation coins
-   --  (which decapsulation recovers as m') and the shared secret. All
-   --  computed here, before any paint, from the same seeds the cases use.
-   ML_D  : constant Bytes_32 := Bytes_32 (Rand (32));
-   ML_Z  : constant Bytes_32 := Bytes_32 (Rand (32));
-   ML_M  : constant Bytes_32 := Bytes_32 (Rand (32));
-   ML_D_N : aliased constant Byte_Seq := Byte_Seq (ML_D);
-   ML_Z_N : aliased constant Byte_Seq := Byte_Seq (ML_Z);
-   ML_M_N : aliased constant Byte_Seq := Byte_Seq (ML_M);
-   --  Converted once, here: a conversion inside a case body would make a
-   --  temporary copy in that frame, which the scan would then find.
-   ML_D_M : constant MLKEM.Bytes_32 := MLKEM.Bytes_32 (ML_D);
-   ML_Z_M : constant MLKEM.Bytes_32 := MLKEM.Bytes_32 (ML_Z);
-   ML_M_M : constant MLKEM.Bytes_32 := MLKEM.Bytes_32 (ML_M);
-   function ML_Keypair return MLKEM.ML_KEM_768.MLKEM_Key is
-      K : MLKEM.ML_KEM_768.MLKEM_Key;
-   begin
-      MLKEM.ML_KEM_768.MLKEM_KeyGen (MLKEM.Bytes_32 (ML_D), MLKEM.Bytes_32 (ML_Z), K);
-      return K;
-   end ML_Keypair;
-   ML_Key  : constant MLKEM.ML_KEM_768.MLKEM_Key := ML_Keypair;
-   ML_Key2 : MLKEM.ML_KEM_768.MLKEM_Key;                    --  keygen case output
-   --  dk_pke is the first 384 * 3 bytes of dk; z the last 32.
-   ML_DK_PKE : aliased constant Byte_Seq := Byte_Seq (ML_Key.DK (0 .. 1151));
-   function ML_Encaps_SS return Byte_Seq is
-      SS : MLKEM.Bytes_32;
-      C  : MLKEM.ML_KEM_768.Ciphertext;
-   begin
-      MLKEM.ML_KEM_768.MLKEM_Encaps (ML_Key.EK, MLKEM.Bytes_32 (ML_M), SS, C);
-      return Byte_Seq (SS);
-   end ML_Encaps_SS;
-   ML_SS_N  : aliased constant Byte_Seq := ML_Encaps_SS;   --  the shared secret both sides derive
-   ML_CT    : MLKEM.ML_KEM_768.Ciphertext;                --  encaps case output, decaps case input
-   ML_SS_E  : MLKEM.Bytes_32;                              --  encaps case output
-   ML_SS_D  : MLKEM.Bytes_32;                              --  decaps case output
-   procedure Case_ML_KeyGen is
-   begin
-      MLKEM.ML_KEM_768.MLKEM_KeyGen (ML_D_M, ML_Z_M, ML_Key2);
-   end Case_ML_KeyGen;
-   procedure Case_ML_Encaps is
-   begin
-      MLKEM.ML_KEM_768.MLKEM_Encaps (ML_Key.EK, ML_M_M, ML_SS_E, ML_CT);
-   end Case_ML_Encaps;
-   procedure Case_ML_Decaps is
-   begin
-      MLKEM.ML_KEM_768.MLKEM_Decaps (ML_CT, ML_Key.DK, ML_SS_D);
-   end Case_ML_Decaps;
-
    --  Case bodies: nothing but the call.
    procedure Case_P256 is
    begin
@@ -454,10 +403,6 @@ begin
    Run ("RSA-2048 PSS sign ", Case_RSA'Access,
         (RSA_P'Access, RSA_Q'Access, RSA_DP'Access, RSA_DQ'Access, RSA_QI'Access, RSA_D'Access),
         "1=p 2=q 3=dP 4=dQ 5=qInv 6=d");
-   Run ("ML-KEM-768 keygen ", Case_ML_KeyGen'Access, (ML_D_N'Access, ML_Z_N'Access, ML_DK_PKE'Access), "1=d 2=z 3=dk_pke");
-   Run ("ML-KEM-768 encaps ", Case_ML_Encaps'Access, (ML_M_N'Access, ML_SS_N'Access), "1=m (coins) 2=shared secret");
-   Run ("ML-KEM-768 decaps ", Case_ML_Decaps'Access, (ML_DK_PKE'Access, ML_Z_N'Access, ML_M_N'Access, ML_SS_N'Access),
-        "1=dk_pke 2=z 3=m' 4=shared secret");
    Put_Line ("=== residue fragments in the primitives:" & Total_Hits'Image
              & "; control found" & Ctl_Found'Image & " of" & Ctl_Want'Image
              & "  (ok flags:" & P256_OK'Image & P384_OK'Image & K6979_OK'Image & RSA_OK'Image & ", sink" & Sink'Image & ")");

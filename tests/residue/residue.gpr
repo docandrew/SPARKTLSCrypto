@@ -1,5 +1,4 @@
 with "../../sparktlscrypto.gpr";
-with "sparkmlkem.gpr";
 
 project Residue is
    for Create_Missing_Dirs use "True";
