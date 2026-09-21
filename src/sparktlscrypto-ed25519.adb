@@ -1173,6 +1173,21 @@ is
         (for all K in Index_64 => X (K) in 0 .. Max_X_Limb);
 
       SM (32 .. 63) := ModL (X);
+
+      --  Scrub the signing scalar and prefix (D), the nonce (R) and the
+      --  unreduced s = r + h*d (X). H and the point [r]B are public.
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
+      SPARKNaCl.Sanitize (Byte_Seq (D));
+      SPARKNaCl.Sanitize (Byte_Seq (R));
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "unused assignment");
+      X := (others => 0);
+      pragma Inspection_Point (X);
+      pragma Warnings (GNATprove, On, "unused assignment");
+      pragma Warnings (GNATprove, On, "statement has no effect");
    end Sign;
 
    --  RFC 8032 §5.1.7: Ed25519 verification requires the scalar S

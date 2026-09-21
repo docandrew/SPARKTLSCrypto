@@ -28,6 +28,11 @@ is
       NM2 (47) := NM2 (47) - 2;
       Modpow (Result, A, NM2, N, N_M0I);
       D := Result;
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
+      Sanitize (Result);
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
    end Inv_Mod_N;
 
    function Is_Zero_384 (A : Big_Nat) return Boolean is
@@ -194,6 +199,9 @@ is
       One                 : Big_Nat;
       G_Pt                : Jacobian;
       RX_Bytes            : Byte_Seq (0 .. 47);
+      --  Variables so that they can be scrubbed: both hold r*d + h.
+      Add_Res             : Arith_Result;
+      Sub_Res             : Arith_Result;
    begin
       --  R_Out / S_Out are unconditionally set by the Encode calls at
       --  the bottom; OK is set to True there too. No need for the
@@ -238,10 +246,9 @@ is
       RD := T1;
 
       declare
-         Add_Res : constant Arith_Result := CT_Add (RD, H_Int, 1);
-         Sub_Res : Arith_Result;
-         Ctl     : Word;
+         Ctl : Word;
       begin
+         Add_Res := CT_Add (RD, H_Int, 1);
          Sum := Add_Res.Value;
          Sum.Len := N.Len;
          --  Reduce: use Sub_Res.Value when (carry from add) OR
@@ -267,6 +274,29 @@ is
       Encode (R_Out, R_Int);
       Encode (S_Out, S_Int);
       OK := True;
+
+      --  Scrub the nonce, the key, the inverse nonce, r*d and r*d + h in
+      --  every form they took, and the projective point [k]G (its Z
+      --  coordinate is a function of k). r, s, the hash and the constant
+      --  one are public.
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
+      Sanitize (K_Int);
+      Sanitize (D_Int);
+      Sanitize (K_Inv);
+      Sanitize (RD);
+      Sanitize (Sum);
+      Sanitize (T1);
+      Sanitize (T2);
+      Sanitize (Add_Res.Value);
+      Sanitize (Sub_Res.Value);
+      Sanitize_Word (Add_Res.Carry);
+      Sanitize_Word (Sub_Res.Carry);
+      Sanitize (G_Pt.X);
+      Sanitize (G_Pt.Y);
+      Sanitize (G_Pt.Z);
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
    end Sign;
 
    procedure Public_Key

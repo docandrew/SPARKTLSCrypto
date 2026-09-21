@@ -86,6 +86,25 @@ is
       Len    : in  Word_Count)
    with Post => Result.Len = Len and Well_Formed (Result);
 
+   --  Scrub a value that held secret material: every word and the length
+   --  go to zero, and the stores survive optimisation (Inspection_Point).
+   --  Zero is not a scrub: a compiler may drop a store to an object that
+   --  is never read again.
+   --  No_Inline as in SPARKNaCl.Sanitize (Regehr et al.): a scrub that is
+   --  inlined into its caller is a dead store there and may be dropped.
+   pragma Warnings (GNATprove, Off, "No_Inline");
+   procedure Sanitize (A : out Big_Nat)
+   with Post => A.Len = 0 and (for all I in Word_Array'Range => A.W (I) = 0),
+        Always_Terminates,
+        No_Inline;
+
+   --  Same for a single word, such as -M^-1 mod 2^64 for a secret modulus.
+   procedure Sanitize_Word (W : out Word)
+   with Post => W = 0,
+        Always_Terminates,
+        No_Inline;
+   pragma Warnings (GNATprove, On, "No_Inline");
+
    --  Constant-time conditional subtraction: if Ctl=1, Result = A - B;
    --  if Ctl=0, Result = A (unchanged). Returns borrow bit.
    function CT_Sub

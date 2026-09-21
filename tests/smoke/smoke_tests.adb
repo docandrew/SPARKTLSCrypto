@@ -20,6 +20,7 @@ with SPARKTLSCrypto.Ed25519;
 with SPARKTLSCrypto.Hashing.SHA256;
 with SPARKTLSCrypto.HKDF;
 with SPARKTLSCrypto.MAC;
+with SPARKTLSCrypto.Base64;
 with SPARKTLSCrypto.RFC6979;
 with SPARKTLSCrypto.RSA;
 with SPARKTLSCrypto.X25519;
@@ -510,6 +511,27 @@ procedure Smoke_Tests is
                    Equal (Q, Zero));
          end;
       end loop;
+
+      --  The fixed-base keygen (Ed25519 table + Edwards-to-Montgomery map)
+      --  is on the handshake hot path; it must agree with the ladder for
+      --  every scalar, clamping included. 64 xorshift scalars.
+      declare
+         Basepoint : constant Bytes_32 := (9, others => 0);
+         X   : Unsigned_64 := 16#9E37_79B9_7F4A_7C15#;
+         SK, Q_Ladder, Q_Fixed : Bytes_32;
+         OK  : Boolean := True;
+      begin
+         for Trial in 1 .. 64 loop
+            for I in SK'Range loop
+               X := X xor Shift_Left (X, 13); X := X xor Shift_Right (X, 7); X := X xor Shift_Left (X, 17);
+               SK (I) := Byte (X and 255);
+            end loop;
+            SPARKTLSCrypto.X25519.Scalar_Mult (Q_Ladder, SK, Basepoint);
+            SPARKTLSCrypto.X25519.Scalar_Mult_Base (Q_Fixed, SK);
+            OK := OK and then Equal (Q_Ladder, Q_Fixed);
+         end loop;
+         Check ("x25519 fixed-base keygen = ladder (64 scalars)", OK);
+      end;
    end Test_X25519;
 
    procedure Test_RFC6979 is
@@ -554,6 +576,54 @@ procedure Smoke_Tests is
       Check ("rfc6979 p-384 sha384 sample",
              OK384 and then Equal (K384, Expected_K384));
    end Test_RFC6979;
+
+   --  The buffer-based Base64 decode (the entry library code uses; no
+   --  secondary stack) must agree with the String-returning one on the
+   --  RFC 4648 section 10 vectors, including both padding shapes.
+   --  The buffer-based Base64 procedures (the only entry points; no
+   --  secondary stack) against the RFC 4648 section 10 vectors, both
+   --  padding shapes included, and encode/decode round trips.
+   procedure Test_Base64 is
+      use SPARKTLSCrypto.Base64;
+      procedure One (Name : String; Encoded : String; Plain : String) is
+         B64     : constant Base64_String := Base64_String (Encoded);
+         Buf     : Byte_Seq (0 .. 15);
+         Len     : Natural;
+         Bytes   : Byte_Seq (0 .. N32 (Plain'Length) - 1);
+         Enc     : String (1 .. 16);
+         Enc_Len : Natural;
+         OK      : Boolean;
+      begin
+         Decode (B64, Buf, Len);
+         OK := Len = Plain'Length and then Decoded_Length (B64) = Plain'Length;
+         if OK then
+            for I in 0 .. Len - 1 loop
+               OK := OK and then Character'Pos (Plain (Plain'First + I)) = Natural (Buf (N32 (I)));
+            end loop;
+            for I in Len .. 15 loop
+               OK := OK and then Buf (N32 (I)) = 0;
+            end loop;
+         end if;
+         Check ("base64 decode " & Name, OK);
+
+         for I in Bytes'Range loop
+            Bytes (I) := Byte (Character'Pos (Plain (Plain'First + Natural (I))));
+         end loop;
+         Encode (Bytes, Enc, Enc_Len);
+         Check ("base64 encode " & Name,
+                Enc_Len = Encoded'Length
+                and then Enc (1 .. Enc_Len) = Encoded
+                and then Validate (Enc (1 .. Enc_Len)));
+      end One;
+   begin
+      One ("empty",  "",         "");
+      One ("f",      "Zg==",     "f");
+      One ("fo",     "Zm8=",     "fo");
+      One ("foo",    "Zm9v",     "foo");
+      One ("foob",   "Zm9vYg==", "foob");
+      One ("fooba",  "Zm9vYmE=", "fooba");
+      One ("foobar", "Zm9vYmFy", "foobar");
+   end Test_Base64;
 
    procedure Test_Ed25519_ASR is
       use SPARKTLSCrypto.Ed25519;
@@ -758,6 +828,7 @@ begin
    Test_HMAC_HKDF;
    Test_X25519;
    Test_RFC6979;
+   Test_Base64;
    Test_Ed25519_ASR;
    Test_AES_GCM_Roundtrip;
    Test_ChaCha20_Poly1305_Smoke;
