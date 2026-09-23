@@ -30,6 +30,7 @@ with SPARKTLSCrypto.RSA;
 with SPARKTLSCrypto.RFC6979;
 with SPARKTLSCrypto.X25519;
 with SPARKTLSCrypto.Ed25519;
+with SPARKTLSCrypto.HMAC_DRBG;
 
 procedure Residue_Scan is
    Scan_Bytes : constant := 262_144;   --  256 KB below the harness
@@ -336,6 +337,30 @@ procedure Residue_Scan is
    Ed_Msg   : constant Byte_Seq (0 .. 31) := (others => 16#44#);
    Ed_SM    : Byte_Seq (0 .. 95);
 
+   --  HMAC_DRBG: the seed material (entropy, nonce) and the working state
+   --  K, V after seeding. K and V are recomputed here from the same seed so
+   --  they can serve as needles once the case has sanitized its own copy.
+   DRBG_Entropy : aliased constant Byte_Seq := Rand (32);
+   DRBG_Nonce   : aliased constant Byte_Seq := Rand (16);
+   DRBG_Empty   : constant Byte_Seq (0 .. -1) := (others => 0);
+   DRBG_Out     : Byte_Seq (0 .. 63);
+   DRBG_OK      : Boolean;
+   DRBG_State   : SPARKTLSCrypto.HMAC_DRBG.State;   --  the case's own, sanitized at the end
+   --  Reference: first 32 output bytes of an identically seeded generator
+   --  equal V after the first request; they are a needle for the working
+   --  state that must not survive on the stack.
+   function DRBG_First_V return Byte_Seq is
+      S  : SPARKTLSCrypto.HMAC_DRBG.State;
+      O  : Byte_Seq (0 .. 31);
+      OK : Boolean;
+   begin
+      SPARKTLSCrypto.HMAC_DRBG.Instantiate (S, DRBG_Entropy, DRBG_Nonce, DRBG_Empty);
+      SPARKTLSCrypto.HMAC_DRBG.Generate (S, DRBG_Empty, O, OK);
+      SPARKTLSCrypto.HMAC_DRBG.Sanitize (S);
+      return O;
+   end DRBG_First_V;
+   DRBG_V1 : aliased constant Byte_Seq := DRBG_First_V;
+
    --  Negative control: a routine that copies the secret into a local and
    --  returns without scrubbing. The scanner must see this one.
    Ctl_Secret : aliased constant Byte_Seq := Rand (32);
@@ -374,6 +399,12 @@ procedure Residue_Scan is
    begin
       SPARKTLSCrypto.Ed25519.Sign (Ed_SM, Ed_Msg, Ed_SK);
    end Case_Ed25519;
+   procedure Case_DRBG is
+   begin
+      SPARKTLSCrypto.HMAC_DRBG.Instantiate (DRBG_State, DRBG_Entropy, DRBG_Nonce, DRBG_Empty);
+      SPARKTLSCrypto.HMAC_DRBG.Generate (DRBG_State, DRBG_Empty, DRBG_Out, DRBG_OK);
+      SPARKTLSCrypto.HMAC_DRBG.Sanitize (DRBG_State);
+   end Case_DRBG;
    procedure Case_RSA is
    begin
       SPARKTLSCrypto.RSA.Sign_PSS
@@ -400,12 +431,14 @@ begin
    Run ("X25519 scalar mult", Case_X25519'Access, (X_SK_N'Access, X_Clamped'Access), "1=sk 2=clamped sk");
    Run ("X25519 fixed-base ", Case_X25519_Base'Access, (X_SK_N'Access, X_Clamped'Access), "1=sk 2=clamped sk");
    Run ("Ed25519 sign      ", Case_Ed25519'Access, (Ed_Seed_N'Access, Ed_Hash'Access), "1=seed 2=scalar||prefix");
+   Run ("HMAC_DRBG seed+gen ", Case_DRBG'Access, (DRBG_Entropy'Access, DRBG_Nonce'Access, DRBG_V1'Access),
+        "1=entropy 2=nonce 3=V after first request");
    Run ("RSA-2048 PSS sign ", Case_RSA'Access,
         (RSA_P'Access, RSA_Q'Access, RSA_DP'Access, RSA_DQ'Access, RSA_QI'Access, RSA_D'Access),
         "1=p 2=q 3=dP 4=dQ 5=qInv 6=d");
    Put_Line ("=== residue fragments in the primitives:" & Total_Hits'Image
              & "; control found" & Ctl_Found'Image & " of" & Ctl_Want'Image
-             & "  (ok flags:" & P256_OK'Image & P384_OK'Image & K6979_OK'Image & RSA_OK'Image & ", sink" & Sink'Image & ")");
+             & "  (ok flags:" & P256_OK'Image & P384_OK'Image & K6979_OK'Image & RSA_OK'Image & DRBG_OK'Image & ", sink" & Sink'Image & ")");
    if Ctl_Found /= Ctl_Want or Ctl_Want = 0 then
       Put_Line ("=== residue scan: FAIL (the control did not light up; the scanner is not seeing the stack)");
       Ada.Command_Line.Set_Exit_Status (1);

@@ -1,0 +1,10 @@
+name = "sparktlscrypto_kat"
+version = "0.0.0"
+description = "NIST CAVP known-answer tests for SPARKTLSCrypto (HMAC_DRBG)"
+project-files = ["kat.gpr"]
+
+[[depends-on]]
+sparktlscrypto = "*"
+
+[[pins]]
+sparktlscrypto = { path = "../.." }

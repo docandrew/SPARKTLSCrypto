@@ -10,6 +10,7 @@ with SPARKNaCl.Hashing.SHA384;
 with SPARKTLSCrypto.AES_GCM;
 with SPARKTLSCrypto.BigNat64;
 with SPARKTLSCrypto.BigNat64_ADX;
+with SPARKTLSCrypto.HMAC_DRBG;
 with SPARKTLSCrypto.P256.ECDSA;
 with SPARKTLSCrypto.P256.Fixed_Base;
 with SPARKTLSCrypto.P256.Point;
@@ -631,6 +632,32 @@ procedure Smoke_Tests is
    --  The buffer-based Base64 procedures (the only entry points; no
    --  secondary stack) against the RFC 4648 section 10 vectors, both
    --  padding shapes included, and encode/decode round trips.
+   --  HMAC_DRBG: the SP 800-90A 11.3 known-answer self-test, and the
+   --  reseed gate that SPARKTLS.RBG relies on.
+   procedure Test_HMAC_DRBG is
+      use SPARKTLSCrypto.HMAC_DRBG;
+      S   : State;
+      Buf : Byte_Seq (0 .. 31);
+      E   : constant Byte_Seq (0 .. 31) := (others => 16#42#);
+      Nn  : constant Byte_Seq (0 .. 15) := (others => 16#17#);
+      Emp : constant Byte_Seq (0 .. -1) := (others => 0);
+      OK  : Boolean;
+   begin
+      Check ("HMAC_DRBG self-test (CAVP vector)", Self_Test);
+      Instantiate (S, E, Nn, Emp, Reseed_Interval => 1);
+      Generate (S, Emp, Buf, OK);
+      Check ("HMAC_DRBG first request after seeding", OK);
+      Generate (S, Emp, Buf, OK);
+      Check ("HMAC_DRBG refuses past the reseed interval",
+             ((not OK) and Reseed_Required (S))
+             and then (for all I in Buf'Range => Buf (I) = 0));
+      Reseed (S, E, Emp);
+      Generate (S, Emp, Buf, OK);
+      Check ("HMAC_DRBG serves again after reseed", OK);
+      Sanitize (S);
+      Check ("HMAC_DRBG sanitized state is uninstantiated", not Instantiated (S));
+   end Test_HMAC_DRBG;
+
    procedure Test_Base64 is
       use SPARKTLSCrypto.Base64;
       procedure One (Name : String; Encoded : String; Plain : String) is
@@ -877,6 +904,7 @@ begin
    Test_X25519;
    Test_RFC6979;
    Test_Base64;
+   Test_HMAC_DRBG;
    Test_P384_Blinding;
    Test_Ed25519_ASR;
    Test_AES_GCM_Roundtrip;
