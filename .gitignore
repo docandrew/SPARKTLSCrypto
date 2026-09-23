@@ -21,3 +21,8 @@ tests/bench/bin/
 tests/bench/obj/
 tests/bench/alire/
 tests/bench/config/
+tests/kat/bin/
+tests/kat/obj/
+tests/kat/alire/
+tests/kat/config/
+tests/kat/vectors/
