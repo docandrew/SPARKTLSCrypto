@@ -53,6 +53,14 @@ is
       0,0,0,0, 0,0,0,0, 0,0,0,0, 15,0,0,0);
    for Ctr_Inc_12_15'Alignment use 64;
 
+   --  Upper half of Q(x) = x^128 + x^127 + x^126 + x^121 + 1.
+   --  The lower half is 1. Two 64-bit Montgomery folds cancel the
+   --  low 128 bits; the existing one-bit correction accounts for the
+   --  reflected GHASH representation. H_Powers keeps its original format.
+   Reduction_Poly : constant array (0 .. 15) of Unsigned_8 :=
+     (0 .. 14 => 0, 15 => 16#C2#);
+   for Reduction_Poly'Alignment use 16;
+
    --  Single-lane CB advance by 16 (used at end of Build_Ctr_Block_16).
    Ctr_Inc_16 : constant array (0 .. 15) of Unsigned_8 :=
      (0,0,0,0, 0,0,0,0, 0,0,0,0, 16,0,0,0);
@@ -721,69 +729,52 @@ is
         "vpclmulqdq $0x01, %%zmm4, %%zmm3, %%zmm3" & ASCII.LF & ASCII.HT &
         "vpxorq    %%zmm3, %%zmm7, %%zmm7"  & ASCII.LF & ASCII.HT &
 
+        --  Combine cross terms within each 128-bit lane before the
+        --  horizontal XOR. Both operations are linear, so this avoids
+        --  a separate horizontal reduction of the middle product.
+        "vpslldq   $8, %%zmm7, %%zmm0"      & ASCII.LF & ASCII.HT &
+        "vpsrldq   $8, %%zmm7, %%zmm7"      & ASCII.LF & ASCII.HT &
+        "vpxorq    %%zmm0, %%zmm5, %%zmm5"  & ASCII.LF & ASCII.HT &
+        "vpxorq    %%zmm7, %%zmm6, %%zmm6"  & ASCII.LF & ASCII.HT &
+
         --  Horizontal reduce 4 lanes → 1 (zmm → ymm → xmm).
-        --  zmm5 = lo, zmm6 = hi, zmm7 = mid.
+        --  zmm5 = lo, zmm6 = hi, with cross terms already combined.
         "vextracti64x4 $1, %%zmm5, %%ymm0"  & ASCII.LF & ASCII.HT &
         "vpxor     %%ymm0, %%ymm5, %%ymm5"  & ASCII.LF & ASCII.HT &
         "vextracti64x4 $1, %%zmm6, %%ymm0"  & ASCII.LF & ASCII.HT &
         "vpxor     %%ymm0, %%ymm6, %%ymm6"  & ASCII.LF & ASCII.HT &
-        "vextracti64x4 $1, %%zmm7, %%ymm0"  & ASCII.LF & ASCII.HT &
-        "vpxor     %%ymm0, %%ymm7, %%ymm7"  & ASCII.LF & ASCII.HT &
         "vextracti128 $1, %%ymm5, %%xmm0"   & ASCII.LF & ASCII.HT &
         "vpxor     %%xmm0, %%xmm5, %%xmm5"  & ASCII.LF & ASCII.HT &
         "vextracti128 $1, %%ymm6, %%xmm0"   & ASCII.LF & ASCII.HT &
         "vpxor     %%xmm0, %%xmm6, %%xmm6"  & ASCII.LF & ASCII.HT &
-        "vextracti128 $1, %%ymm7, %%xmm0"   & ASCII.LF & ASCII.HT &
-        "vpxor     %%xmm0, %%xmm7, %%xmm7"  & ASCII.LF & ASCII.HT &
-        --  Now xmm5=lo, xmm6=hi, xmm7=mid (128-bit each).
-
-        --  Combine cross terms: lo += (mid << 64), hi += (mid >> 64).
-        "vmovdqa   %%xmm7, %%xmm0"          & ASCII.LF & ASCII.HT &
-        "vpslldq   $8, %%xmm0, %%xmm0"      & ASCII.LF & ASCII.HT &
-        "vpsrldq   $8, %%xmm7, %%xmm7"      & ASCII.LF & ASCII.HT &
-        "vpxor     %%xmm0, %%xmm5, %%xmm5"  & ASCII.LF & ASCII.HT &
-        "vpxor     %%xmm7, %%xmm6, %%xmm6"  & ASCII.LF & ASCII.HT &
+        --  Now xmm5=lo, xmm6=hi (128-bit each).
 
         --  Bit-shift correction: (xmm6:xmm5) <<= 1 (32-bit-lane carry).
-        "vmovdqa   %%xmm5, %%xmm0"          & ASCII.LF & ASCII.HT &
-        "vmovdqa   %%xmm6, %%xmm1"          & ASCII.LF & ASCII.HT &
-        "vpsrld    $31, %%xmm0, %%xmm0"     & ASCII.LF & ASCII.HT &
-        "vpsrld    $31, %%xmm1, %%xmm1"     & ASCII.LF & ASCII.HT &
+        "vpsrld    $31, %%xmm5, %%xmm0"     & ASCII.LF & ASCII.HT &
+        "vpsrld    $31, %%xmm6, %%xmm1"     & ASCII.LF & ASCII.HT &
         "vpslld    $1, %%xmm5, %%xmm5"      & ASCII.LF & ASCII.HT &
         "vpslld    $1, %%xmm6, %%xmm6"      & ASCII.LF & ASCII.HT &
-        "vmovdqa   %%xmm0, %%xmm2"          & ASCII.LF & ASCII.HT &
-        "vpsrldq   $12, %%xmm2, %%xmm2"     & ASCII.LF & ASCII.HT &
+        "vpsrldq   $12, %%xmm0, %%xmm2"     & ASCII.LF & ASCII.HT &
         "vpslldq   $4, %%xmm0, %%xmm0"      & ASCII.LF & ASCII.HT &
         "vpslldq   $4, %%xmm1, %%xmm1"      & ASCII.LF & ASCII.HT &
         "vpor      %%xmm0, %%xmm5, %%xmm5"  & ASCII.LF & ASCII.HT &
         "vpor      %%xmm1, %%xmm6, %%xmm6"  & ASCII.LF & ASCII.HT &
         "vpor      %%xmm2, %%xmm6, %%xmm6"  & ASCII.LF & ASCII.HT &
 
-        --  Reduction first fold.
-        "vmovdqa   %%xmm5, %%xmm0"          & ASCII.LF & ASCII.HT &
-        "vmovdqa   %%xmm5, %%xmm1"          & ASCII.LF & ASCII.HT &
-        "vmovdqa   %%xmm5, %%xmm2"          & ASCII.LF & ASCII.HT &
-        "vpslld    $31, %%xmm0, %%xmm0"     & ASCII.LF & ASCII.HT &
-        "vpslld    $30, %%xmm1, %%xmm1"     & ASCII.LF & ASCII.HT &
-        "vpslld    $25, %%xmm2, %%xmm2"     & ASCII.LF & ASCII.HT &
-        "vpxor     %%xmm1, %%xmm0, %%xmm0"  & ASCII.LF & ASCII.HT &
-        "vpxor     %%xmm2, %%xmm0, %%xmm0"  & ASCII.LF & ASCII.HT &
-        "vmovdqa   %%xmm0, %%xmm3"          & ASCII.LF & ASCII.HT &
-        "vpsrldq   $4, %%xmm3, %%xmm3"      & ASCII.LF & ASCII.HT &
-        "vpslldq   $12, %%xmm0, %%xmm0"     & ASCII.LF & ASCII.HT &
+        --  Montgomery reduction modulo the reflected polynomial Q.
+        --  For low-half L=(L_hi:L_lo), each fold is
+        --    L := swap64(L) xor CLMUL(L_lo, 0xc200000000000000).
+        --  Since Q's low 64 bits equal 1, this cancels one low limb
+        --  and divides by x^64. Two folds, XORed with the high half,
+        --  yield T*x^-128 mod Q. The one-bit correction above makes
+        --  this the same GHASH result as the former shift reduction.
+        "vmovdqa   (%5), %%xmm4"            & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%xmm4, %%xmm5, %%xmm0" & ASCII.LF & ASCII.HT &
+        "vpshufd   $0x4e, %%xmm5, %%xmm5"  & ASCII.LF & ASCII.HT &
         "vpxor     %%xmm0, %%xmm5, %%xmm5"  & ASCII.LF & ASCII.HT &
-
-        --  Reduction second fold (final tag in xmm6).
-        "vmovdqa   %%xmm5, %%xmm0"          & ASCII.LF & ASCII.HT &
-        "vmovdqa   %%xmm5, %%xmm1"          & ASCII.LF & ASCII.HT &
-        "vmovdqa   %%xmm5, %%xmm2"          & ASCII.LF & ASCII.HT &
-        "vpsrld    $1, %%xmm0, %%xmm0"      & ASCII.LF & ASCII.HT &
-        "vpsrld    $2, %%xmm1, %%xmm1"      & ASCII.LF & ASCII.HT &
-        "vpsrld    $7, %%xmm2, %%xmm2"      & ASCII.LF & ASCII.HT &
-        "vpxor     %%xmm1, %%xmm6, %%xmm6"  & ASCII.LF & ASCII.HT &
-        "vpxor     %%xmm2, %%xmm6, %%xmm6"  & ASCII.LF & ASCII.HT &
-        "vpxor     %%xmm0, %%xmm6, %%xmm6"  & ASCII.LF & ASCII.HT &
-        "vpxor     %%xmm3, %%xmm6, %%xmm6"  & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%xmm4, %%xmm5, %%xmm0" & ASCII.LF & ASCII.HT &
+        "vpshufd   $0x4e, %%xmm5, %%xmm5"  & ASCII.LF & ASCII.HT &
+        "vpxor     %%xmm0, %%xmm5, %%xmm5"  & ASCII.LF & ASCII.HT &
         "vpxor     %%xmm5, %%xmm6, %%xmm6"  & ASCII.LF & ASCII.HT &
 
         --  Convert tag to NIST byte order, store to S.
@@ -794,7 +785,8 @@ is
                    System.Address'Asm_Input ("r", Blocks'Address),
                    System.Address'Asm_Input ("r", H_Powers'Address),
                    System.Address'Asm_Input ("r", Bswap_Mask_ZMM'Address),
-                   System.Address'Asm_Input ("r", Bswap_Mask_XMM'Address)),
+                   System.Address'Asm_Input ("r", Bswap_Mask_XMM'Address),
+                   System.Address'Asm_Input ("r", Reduction_Poly'Address)),
         Clobber => "xmm0,xmm1,xmm2,xmm3,xmm4,xmm5,xmm6,xmm7," &
                    "xmm14,xmm15,memory",
         Volatile => True);

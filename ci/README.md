@@ -101,3 +101,12 @@ restores the caller's build configuration. It covers the full documented limb
 bounds and checks the exact-limb digest captured before the carry-width change.
 See `tests/field25519/README.md` for primitive benchmarks, timing checks and the
 related X25519/Ed25519 validation commands.
+
+## GHASH16 reduction
+
+ci/ghash16.sh, included in ci/check.sh, verifies the Montgomery reduction
+algebra on every operand basis pair and compares the compiled AVX-512 kernel
+with independent bit-serial GHASH. The saved pre-change digest also has to
+match. See tests/ghash16/README.md for the argument, coverage and limitations.
+The instruction allowlist adds only immediate-control vpshufd, a fixed
+shuffle with operand-independent timing and no new feature requirement.

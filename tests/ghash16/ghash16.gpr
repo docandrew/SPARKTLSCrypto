@@ -1,0 +1,11 @@
+with "../../sparktlscrypto.gpr";
+project GHASH16 is
+   for Create_Missing_Dirs use "True";
+   for Object_Dir use "obj";
+   for Exec_Dir use "bin";
+   for Source_Dirs use (".");
+   for Main use ("bench_ghash16.adb", "test_ghash16.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use ("-O3", "-g", "-gnat2022", "-gnata");
+   end Compiler;
+end GHASH16;
