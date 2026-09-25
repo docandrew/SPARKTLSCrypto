@@ -50,3 +50,15 @@ used 64 bytes and violated the API precondition. The old Ed25519 primitive
 timing/performance numbers from those helpers are invalid; collect a fresh
 baseline with this version. X25519 and field arithmetic measurements are
 unaffected. The benchmark also reports fixed-base X25519 separately.
+
+The timing helper accepts optional observation count (1,000--200,000 per
+class), class-order seed, and one operation name. The negative control always
+runs. For example, an extended fixed-base check is:
+
+```sh
+taskset -c 37 tests/field25519/bin/timing_field25519 200000 101 X25519_Base
+```
+
+Retain failing runs. Investigate a timing flag with matched baseline controls,
+independent class-order seeds, native instruction/address inspection and taint
+checks. Repeated passing runs alone do not explain an earlier failure.

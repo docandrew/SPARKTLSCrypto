@@ -1,4 +1,5 @@
 with Ada.Text_IO; use Ada.Text_IO;
+with Ada.Command_Line;
 with Ada.Containers.Generic_Array_Sort;
 with Ada.Numerics.Long_Elementary_Functions; use Ada.Numerics.Long_Elementary_Functions;
 with Interfaces; use Interfaces;
@@ -13,9 +14,18 @@ procedure Timing_Field25519 is
    type Samples is array (Positive range <>) of Unsigned_64;
    procedure Sort is new Ada.Containers.Generic_Array_Sort (Positive, Unsigned_64, Samples);
    type Mode is (X25519_Mult, X25519_Base, Ed25519_Sign, Negative_Control);
-   Seed : Unsigned_64 := 16#ecaefabcdef#;
+   subtype Observation_Count is Positive range 1_000 .. 200_000;
+   Observations : constant Observation_Count :=
+     (if Ada.Command_Line.Argument_Count >= 1
+      then Observation_Count'Value (Ada.Command_Line.Argument (1)) else 40_000);
+   Seed : Unsigned_64 :=
+     (if Ada.Command_Line.Argument_Count >= 2
+      then Unsigned_64'Value (Ada.Command_Line.Argument (2)) else 16#ecaefabcdef#);
+   function Enabled (Operation : Mode) return Boolean is
+     (Ada.Command_Line.Argument_Count < 3 or else
+      Mode'Value (Ada.Command_Line.Argument (3)) = Operation);
    procedure Test (Operation : Mode) is
-      Count : constant Positive := 40_000;
+      Count : constant Positive := Observations;
       T0, T1 : Samples (1 .. Count);
       N0, N1 : Natural := 0;
       B : Byte;
@@ -94,7 +104,7 @@ procedure Timing_Field25519 is
    end Test;
 begin
    Test (Negative_Control);
-   Test (X25519_Mult);
-   Test (X25519_Base);
-   Test (Ed25519_Sign);
+   if Enabled (X25519_Mult) then Test (X25519_Mult); end if;
+   if Enabled (X25519_Base) then Test (X25519_Base); end if;
+   if Enabled (Ed25519_Sign) then Test (Ed25519_Sign); end if;
 end Timing_Field25519;
