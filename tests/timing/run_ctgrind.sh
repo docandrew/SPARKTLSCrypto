@@ -143,16 +143,21 @@ run_one ct_rfc6979           clean || fail=1
 run_one ct_hmac              clean || fail=1
 run_one ct_rsa_sign_plain    clean || fail=1
 run_one ct_rsa_verify        clean || fail=1
-#  ct_rsa_sign_crt: exactly THREE classified sites, all one decision --
+#  ct_rsa_sign_crt: exactly TWO classified sites, both one decision --
 #  the verify-after-sign check in RSA_Private_Fast (a constant-time
 #  compare of two PUBLIC outputs, signature and padded message, whose
 #  bytes nevertheless derive from the poisoned key) and the propagation
-#  of its Boolean through Sign_PSS's OK and the harness's print of it.
-#  Reported as seen, not masked. Any other count is a regression: more
-#  means a new key-dependent branch; fewer means the poison stopped
-#  reaching the signer. A toolchain bump that moves the count is
-#  re-triaged against the valgrind output, not renumbered.
-run_one ct_rsa_sign_crt      exact 3 || fail=1
+#  of its Boolean through Sign_PSS's OK. Reported as seen, not masked.
+#  Any other count is a regression: more means a new key-dependent
+#  branch; fewer means the poison stopped reaching the signer. A
+#  toolchain bump that moves the count is re-triaged against the valgrind
+#  output, not renumbered.
+#  Re-triaged 2026-09-25 for -fno-tree-vrp: there were three sites, the
+#  third the harness's print of OK (ct_rsa_sign_crt.adb:166). Without
+#  value-range propagation Sign_PSS sets OK through its branch at the
+#  second site, so the harness receives a defined value; the two library
+#  sites (sparktlscrypto-rsa.adb:1202 and :1291) are unchanged.
+run_one ct_rsa_sign_crt      exact 2 || fail=1
 
 echo ""
 if [ "$fail" -eq 0 ]; then
