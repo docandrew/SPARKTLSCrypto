@@ -21,6 +21,21 @@ Fiat-Crypto
   from Fiat-Crypto style formally verified arithmetic. The source headers
   identify these as MIT/PLV-derived arithmetic.
 
+SHA-NI SHA-256
+
+  The SHA-NI block function in SPARKTLSCrypto.Hashing.SHA256 is a
+  translation to Ada inline assembly of Jeffrey Walton's sha256-x86.c, which
+  he placed in the public domain.
+
+PCLMULQDQ GHASH
+
+  SPARKTLSCrypto.GHASH_NI implements GHASH as described by Shay Gueron and
+  Michael E. Kounavis in "Intel Carry-Less Multiplication Instruction and its
+  Usage for Computing the GCM Mode" (Intel white paper). It was written with
+  reference to the gcm_gmult_clmul routine in ghash-x86_64.pl by Andy
+  Polyakov for the OpenSSL project, as carried in BoringSSL under the Apache
+  License 2.0; no code is taken from that file.
+
 SPARKNaCl
 
   Several APIs, software fallbacks, and compatibility paths depend on or adapt
