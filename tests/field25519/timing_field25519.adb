@@ -20,7 +20,8 @@ procedure Timing_Field25519 is
       N0, N1 : Natural := 0;
       B : Byte;
       Raw, Q, PK : Bytes_32;
-      SK, Signature : Bytes_64;
+      SK : Bytes_64;
+      Signature : Byte_Seq (0 .. 95);
       Basepoint : constant Bytes_32 := (9, others => 0);
       Message : constant Byte_Seq (0 .. 31) := (others => 42);
       type Key_Array is array (0 .. 1) of Bytes_64;

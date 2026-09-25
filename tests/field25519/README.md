@@ -43,3 +43,10 @@ Also run the RFC 7748/8032 and field KAT executables in SPARKTLS,
 `tests/timing/ct_x25519`, `tests/timing/ct_ed25519`, their negative control,
 and `tests/residue/residue_scan`. Test the production optimization settings:
 changing the compiler settings can change constant-time and erasure properties.
+
+The Ed25519 benchmark and timing helper use a 96-byte signed-message buffer
+for their 32-byte message, as required by Sign. Before this correction they
+used 64 bytes and violated the API precondition. The old Ed25519 primitive
+timing/performance numbers from those helpers are invalid; collect a fresh
+baseline with this version. X25519 and field arithmetic measurements are
+unaffected. The benchmark also reports fixed-base X25519 separately.
