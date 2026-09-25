@@ -11,5 +11,6 @@ ci/versions.sh
 ci/build.sh
 ci/smoke.sh
 ci/prepared.sh
+ci/field25519.sh
 ci/kat.sh
 ci/residue.sh

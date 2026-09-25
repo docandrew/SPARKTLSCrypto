@@ -92,3 +92,12 @@ portable configurations. It requires OpenSSL headers and libcrypto, supplied by
 the development shell. The production library retains its Ada/assembly-only
 linkage. See `tests/prepared/README.md` for alignment, lifecycle, timing, and
 benchmark coverage. `ct_prepared` is included in the ctgrind lane.
+
+## Field25519 carry widths
+
+`ci/field25519.sh`, included in `ci/check.sh`, compares 31,800 results against
+OpenSSL bignum arithmetic with runtime checks and contracts enabled, then
+restores the caller's build configuration. It covers the full documented limb
+bounds and checks the exact-limb digest captured before the carry-width change.
+See `tests/field25519/README.md` for primitive benchmarks, timing checks and the
+related X25519/Ed25519 validation commands.
