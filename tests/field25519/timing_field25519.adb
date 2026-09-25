@@ -12,7 +12,7 @@ procedure Timing_Field25519 is
      with Import, Convention => C, External_Name => "field25519_timing_canary";
    type Samples is array (Positive range <>) of Unsigned_64;
    procedure Sort is new Ada.Containers.Generic_Array_Sort (Positive, Unsigned_64, Samples);
-   type Mode is (X25519_Mult, Ed25519_Sign, Negative_Control);
+   type Mode is (X25519_Mult, X25519_Base, Ed25519_Sign, Negative_Control);
    Seed : Unsigned_64 := 16#ecaefabcdef#;
    procedure Test (Operation : Mode) is
       Count : constant Positive := 40_000;
@@ -31,6 +31,7 @@ procedure Timing_Field25519 is
       begin
          case Operation is
             when X25519_Mult => SPARKTLSCrypto.X25519.Scalar_Mult (Q, Raw, Basepoint);
+            when X25519_Base => SPARKTLSCrypto.X25519.Scalar_Mult_Base (Q, Raw);
             when Ed25519_Sign => SPARKTLSCrypto.Ed25519.Sign (Signature, Message, SK);
             when Negative_Control => Canary (B);
          end case;
@@ -94,5 +95,6 @@ procedure Timing_Field25519 is
 begin
    Test (Negative_Control);
    Test (X25519_Mult);
+   Test (X25519_Base);
    Test (Ed25519_Sign);
 end Timing_Field25519;

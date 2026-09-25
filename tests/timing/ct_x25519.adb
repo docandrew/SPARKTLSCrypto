@@ -41,6 +41,9 @@ begin
    Ctgrind.Make_Defined (Q'Address, Interfaces.C.size_t (Q'Length));
    Ctgrind.Use_Output (Q'Address, Interfaces.C.size_t (Q'Length));
 
-   Put_Line ("ct_x25519: Scalar_Mult completed");
+   SPARKTLSCrypto.X25519.Scalar_Mult_Base (Q, N);
+   Ctgrind.Make_Defined (Q'Address, Interfaces.C.size_t (Q'Length));
+   Ctgrind.Use_Output (Q'Address, Interfaces.C.size_t (Q'Length));
+   Put_Line ("ct_x25519: Scalar_Mult and Scalar_Mult_Base completed");
    Ada.Command_Line.Set_Exit_Status (0);
 end Ct_X25519;

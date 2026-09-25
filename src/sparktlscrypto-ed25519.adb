@@ -5,6 +5,7 @@
 
 with Interfaces;           use Interfaces;
 with SPARKTLSCrypto.Fiat_25519;  use SPARKTLSCrypto.Fiat_25519;
+with SPARKTLSCrypto.Ed25519_Base_Table;
 with SPARKNaCl;
 with SPARKNaCl.Hashing.SHA512;
 
@@ -212,77 +213,18 @@ is
    end Point_Double;
 
    ----------------------------------------------------------------------------
-   --  Precomputed base point table: [1]B .. [15]B
+   --  Position-specific affine points [k * 256**i]B. Each lookup scans all
+   --  fifteen entries at the public byte position; the scalar is never used
+   --  as a memory index. Z is one for all entries, including the identity.
    ----------------------------------------------------------------------------
 
-   type Table_Index is range 1 .. 15;
-   type Precomp_Table is array (Table_Index) of Ext_Point;
-
-   Base_Table : constant Precomp_Table :=
-     (1 => (X => (16#62D608F25D51A#, 16#412A4B4F6592A#, 16#75B7171A4B31D#, 16#1FF60527118FE#, 16#216936D3CD6E5#),
-            Y => (16#6666666666658#, 16#4CCCCCCCCCCCC#, 16#1999999999999#, 16#3333333333333#, 16#6666666666666#),
-            Z => (16#0000000000001#, 16#0000000000000#, 16#0000000000000#, 16#0000000000000#, 16#0000000000000#),
-            T => (16#68AB3A5B7DDA3#, 16#00EEA2A5EADBB#, 16#2AF8DF483C27E#, 16#332B375274732#, 16#67875F0FD78B7#)),
-      2 => (X => (16#5E6CF9F3FD67E#, 16#102C74ED242A2#, 16#4F06F677913E2#, 16#56A2BBB68F090#, 16#3B6F8891960F6#),
-            Y => (16#34C9A874A007E#, 16#4EA20E6F1B6DA#, 16#36AE09F5B8559#, 16#0492C90FA078A#, 16#336D9ECE4CDB3#),
-            Z => (16#55B0BF61C8608#, 16#7E636B3174E45#, 16#3D9D6D142C9EF#, 16#7517ECE5C0B89#, 16#59E4EA1A52A20#),
-            T => (16#2C7E392CAD989#, 16#00907A27378A6#, 16#5781F05C9D254#, 16#6D57E37537F6E#, 16#1F6E08DA2D298#)),
-      3 => (X => (16#156CFC90DF8E0#, 16#196D5EAD66B28#, 16#4D791276C18B3#, 16#538FC7902D80E#, 16#7C79BD81BE5FE#),
-            Y => (16#4C07F50735CA7#, 16#642CA75393A6E#, 16#0D8746961B46F#, 16#48A3066E1A7F0#, 16#1EEBD8C6EBA89#),
-            Z => (16#459D9FBA69EFE#, 16#093AA464EBF37#, 16#100B25633CF01#, 16#215CA7060ACD1#, 16#0101F45083ACE#),
-            T => (16#156E48AA004BB#, 16#51810CBE7A4E0#, 16#27E856C7FE9BC#, 16#40EDF86C3CFCA#, 16#1217D7AF665DF#)),
-      4 => (X => (16#363FCDE8526BF#, 16#1D68A2A5FA320#, 16#6A2F2C809BBF0#, 16#0EECC96E5AC0C#, 16#3349374B8FF7F#),
-            Y => (16#77C9E0A55F002#, 16#1A485852CC110#, 16#6BA5D0D3D0A6E#, 16#7BCA2393AB1F5#, 16#7B444D3F155E7#),
-            Z => (16#193B1DC80E4CD#, 16#29815CC4A591E#, 16#58EFC4492128B#, 16#02E952A5C5BA9#, 16#045BE850E83C1#),
-            T => (16#1FD8F28269DE7#, 16#34706555DA2B1#, 16#7579A811F358A#, 16#4AEF75D1154AE#, 16#59A06515D0063#)),
-      5 => (X => (16#674DBE2986BD1#, 16#6A89CB9682122#, 16#2AE6D23A87BD6#, 16#0584C6F708F4A#, 16#2AB2A5B6DA2F3#),
-            Y => (16#5C3587C6E9B73#, 16#52166752AFA34#, 16#07712601BE749#, 16#47A5F3193A9FC#, 16#69BAE0F220CCD#),
-            Z => (16#06417ADA5C85D#, 16#0B049C57163A2#, 16#0954AC7E72939#, 16#0A3B9A8B64744#, 16#5699F014033FB#),
-            T => (16#1A7CECD7B5BE4#, 16#1FD131D540E5C#, 16#48BCFE215DB4E#, 16#733386FFB2F12#, 16#5102C2E99AEC9#)),
-      6 => (X => (16#7AD5C3589C7FB#, 16#3C5C40566298F#, 16#7305C1E744B0D#, 16#06B448FB3F2F6#, 16#1BDF617094D86#),
-            Y => (16#6255D04CF5337#, 16#18015C31F0C42#, 16#1E1376D78C608#, 16#44E4882139578#, 16#29013DDF39C51#),
-            Z => (16#55220806A5D9D#, 16#1378B181D70C1#, 16#777DB0F4DDF0C#, 16#77DA29F1DAA0E#, 16#4E9738D2FA7D2#),
-            T => (16#7D6B4CA97E1DB#, 16#77E358B13557B#, 16#009D4DCFA58C7#, 16#5B3E6602BB3E3#, 16#2A53F2979379A#)),
-      7 => (X => (16#615BEC1AC2631#, 16#1539D7AC30191#, 16#24E1D6E598611#, 16#2E378D6F743F7#, 16#1D3781242E289#),
-            Y => (16#1A7626D655B61#, 16#796F94507A3FA#, 16#7087A3A9DBCD4#, 16#440C8C863EA82#, 16#536FD5AFF5CEB#),
-            Z => (16#4C36801D1A6A4#, 16#66E3EE1A0423A#, 16#396877CC5DDDB#, 16#3EE04C554CCE9#, 16#4EF4533A71ACD#),
-            T => (16#1E56A321A6F9C#, 16#427987DA13AFD#, 16#0B4EAE780343D#, 16#1BB5F2732AADE#, 16#66B8AA0D998B2#)),
-      8 => (X => (16#57970824CD1D9#, 16#75F464679035B#, 16#56DB315444133#, 16#4B3EC9D800062#, 16#592A134F7F38D#),
-            Y => (16#4EE686D78FAFC#, 16#7338475AE9788#, 16#4F6313796B18B#, 16#2EA2A34E1F515#, 16#1D8FDFA3AFB4E#),
-            Z => (16#729E8B78555F5#, 16#5A148F96BE5E8#, 16#0F787820BFF44#, 16#5915988098A90#, 16#70E6708DCBA0D#),
-            T => (16#1F7CBF0A2A9ED#, 16#3C2A22D3457AF#, 16#007F83D5E7E13#, 16#7DF878E9FADCC#, 16#6850E0DBE8207#)),
-      9 => (X => (16#615E817869F29#, 16#39CF714140AEE#, 16#2146222466D84#, 16#78351A63DBD15#, 16#7F41CDC857AAF#),
-            Y => (16#06E4878F88310#, 16#3027B721F4AE9#, 16#0C0C9CD4F294C#, 16#1057A98CD7061#, 16#774584288CCA5#),
-            Z => (16#2FB214DD2EF61#, 16#134D205AAEA64#, 16#51742F87AF2A7#, 16#1DED4F7DB773E#, 16#34FA437F1052B#),
-            T => (16#6B1BE1E02EBF7#, 16#0B65760FD043B#, 16#14B36A3878264#, 16#1D7264BBA3FBB#, 16#3DB50BA8F813D#)),
-      10 => (X => (16#00E945EEBEA57#, 16#2261F53154BFD#, 16#605DD6D5EA34C#, 16#1C5B5175826BF#, 16#7CA8C99DFC9DA#),
-             Y => (16#60FE831D260D3#, 16#61D6BE35D0380#, 16#2EA75A4D6DF0B#, 16#451FE81225642#, 16#015C96F0E41E3#),
-             Z => (16#5E80C7C761DAB#, 16#60F177DAE6E5B#, 16#6F4B9D88DEABD#, 16#439F7C695D36D#, 16#6612CEEAE0F41#),
-             T => (16#60221288B3D66#, 16#100D7F9C8EE98#, 16#1A2BC7829C300#, 16#039FE91BB4565#, 16#1AB3F536937B9#)),
-      11 => (X => (16#29B3635FC6914#, 16#26F608C9EDF4F#, 16#3E56D529E151A#, 16#42154EB014A1A#, 16#3A08C55DBA964#),
-             Y => (16#44DFFAB8B3BAD#, 16#22DA29D2B2168#, 16#3F8A8E2598333#, 16#2A33D0BDE867A#, 16#54577A6F45DA2#),
-             Z => (16#35919BCD30D0A#, 16#524CC2711906B#, 16#1BD13EE300532#, 16#0151809AA28C2#, 16#24DC143469070#),
-             T => (16#2CA5A3B408934#, 16#0E2E305E98B76#, 16#09B105E8EE732#, 16#130C889074E86#, 16#531BA123C246F#)),
-      12 => (X => (16#3DA9F894EEFE8#, 16#308377672F345#, 16#0C43FAAD6CC67#, 16#6FBD908BFCEBE#, 16#4CB58F88DCFC9#),
-             Y => (16#277567DF66147#, 16#30EA75443702C#, 16#43019FD9D04E1#, 16#5DF286E59EFB4#, 16#7843D5E446AD9#),
-             Z => (16#59A7582C10E88#, 16#3D9C924CA4B88#, 16#648AD546F3A83#, 16#62BF4F7F80D7A#, 16#0DFC907E5D0BF#),
-             T => (16#20D023800B442#, 16#14416EFD7CFFA#, 16#5D296477E1216#, 16#0CB515F16F737#, 16#1AC0064BA99AD#)),
-      13 => (X => (16#0149CC6469094#, 16#21E8FB1897090#, 16#14B2FC62C9DBB#, 16#00395D8A143A3#, 16#0622E8797C947#),
-             Y => (16#68CA0A259C979#, 16#5C6A1C8A170EA#, 16#53572930258C6#, 16#3B49FF8AD08D7#, 16#11A559BBC1494#),
-             Z => (16#059A3956D28D4#, 16#08AEC2ABA8954#, 16#0EBEDF24F94F5#, 16#2F12C6ECECB59#, 16#59A225DA6049B#),
-             T => (16#428E6BC6DFFF6#, 16#5A50E6914B357#, 16#37FA4203CA759#, 16#40E2FB6AEA720#, 16#2E013BDB4974C#)),
-      14 => (X => (16#6ADB3D4065F0F#, 16#0B71E55756165#, 16#3D57CF2F44823#, 16#3BD20C992FB21#, 16#627471A969692#),
-             Y => (16#77AC0A5C35E7D#, 16#26A3AF3F9F112#, 16#5F7A979957A15#, 16#60657AAAF941C#, 16#1C5B41B279989#),
-             Z => (16#658DCC42FEC91#, 16#5EF8491E1F4E1#, 16#06B456A020848#, 16#17304BB8444D4#, 16#309488BED7AE2#),
-             T => (16#50576E87D52F5#, 16#10424C24AE929#, 16#44A16D6AA6A9C#, 16#1A3962F2672A9#, 16#3E5A47E87D464#)),
-      15 => (X => (16#68748671AE865#, 16#1E572A6A489E5#, 16#5D260CAA7E620#, 16#51614D952CEAD#, 16#3AEA74F08B2D7#),
-             Y => (16#163735DA74113#, 16#6D31354945942#, 16#1EE3E65CCF368#, 16#24B4EB44B7DF9#, 16#7F9D6C35DC49F#),
-             Z => (16#5826CC9D90A24#, 16#0CB7D1928E0ED#, 16#4C02F52699E41#, 16#489651A84D053#, 16#533552E07F39F#),
-             T => (16#75B37FD6EA971#, 16#442A3B028DF79#, 16#0F880856384F6#, 16#6A7B9783232EE#, 16#32A3F803CDDB7#)));
+   package BT renames SPARKTLSCrypto.Ed25519_Base_Table;
+   subtype Table_Index is BT.Digit;
 
    ----------------------------------------------------------------------------
-   --  Windowed scalar base multiplication (4-bit window)
-   --  Processes 4 bits at a time using precomputed [1]B .. [15]B
+   --  Sum high nibbles with the position tables, multiply by 16, then add
+   --  low nibbles: S = sum_i (16*hi_i + lo_i) * 256**i.
+   --  This needs four point doublings in total instead of four per nibble.
    ----------------------------------------------------------------------------
 
    function Scalarbase (S : Bytes_32) return Ext_Point with
@@ -294,9 +236,9 @@ is
       R : Ext_Point := Identity;
       Nibble : Unsigned_64;
 
-      --  Constant-time table lookup: select Base_Table(idx) or identity
+      --  Constant-time lookup at a public byte position, or identity
       --  Always touches every table entry to avoid timing leaks.
-      function CT_Lookup (Idx : Unsigned_64) return Ext_Point
+      function CT_Lookup (Position : BT.Position; Idx : Unsigned_64) return Ext_Point
       with Pre  => Idx <= 15,
            Post => Is_Valid (CT_Lookup'Result)
       is
@@ -307,6 +249,7 @@ is
             --  CT equality: diff = K xor Idx. If equal, diff = 0.
             --  Collapse all bits: if any bit set, result is nonzero.
             declare
+               Entry_Point : constant BT.Affine_Point := BT.Point_At (Position, K);
                Diff : Unsigned_64 := Unsigned_64 (K) xor Idx;
                Eq   : Unsigned_64;
                M    : Unsigned_64;
@@ -321,10 +264,9 @@ is
                Eq := 1 - (Diff and 1);  --  1 if K=Idx, 0 otherwise
                M := -Eq;               --  all-ones if K=Idx, 0 otherwise
                for L in 0 .. 4 loop
-                  Result.X (L) := Result.X (L) xor (M and (Result.X (L) xor Base_Table (K).X (L)));
-                  Result.Y (L) := Result.Y (L) xor (M and (Result.Y (L) xor Base_Table (K).Y (L)));
-                  Result.Z (L) := Result.Z (L) xor (M and (Result.Z (L) xor Base_Table (K).Z (L)));
-                  Result.T (L) := Result.T (L) xor (M and (Result.T (L) xor Base_Table (K).T (L)));
+                  Result.X (L) := Result.X (L) xor (M and (Result.X (L) xor Entry_Point.X (L)));
+                  Result.Y (L) := Result.Y (L) xor (M and (Result.Y (L) xor Entry_Point.Y (L)));
+                  Result.T (L) := Result.T (L) xor (M and (Result.T (L) xor Entry_Point.T (L)));
                end loop;
             end;
          end loop;
@@ -333,11 +275,11 @@ is
 
       --  Constant-time conditional point add: always does the add,
       --  then selects old or new result based on whether nibble is 0.
-      procedure CT_Add (Acc : in out Ext_Point; Nibble : Unsigned_64)
+      procedure CT_Add (Acc : in out Ext_Point; Position : BT.Position; Nibble : Unsigned_64)
       with Pre  => Is_Valid (Acc) and Nibble <= 15,
            Post => Is_Valid (Acc)
       is
-         T     : constant Ext_Point := CT_Lookup (Nibble);
+         T     : constant Ext_Point := CT_Lookup (Position, Nibble);
          Sum   : constant Ext_Point := Point_Add (Acc, T);
          --  Select: if Nibble = 0, keep Acc; else use Sum
          Nz    : Unsigned_64 := Nibble;
@@ -369,36 +311,23 @@ is
          end loop;
       end CT_Add;
    begin
-      --  Process scalar 4 bits at a time, MSB first
-      --  Scalar is 256 bits = 64 nibbles
-      --  Uses P2 intermediate form for chained doublings:
-      --  P2→P1xP1→P2→P1xP1→P2→P1xP1→P2→P1xP1→Ext for the CT_Add
-      --  Saves 4 Sqr + 4 Mul per nibble vs full Point_Double.
-      for I in reverse N32 range 0 .. 31 loop
+      for I in N32 range 0 .. 31 loop
          pragma Loop_Invariant (Is_Valid (R));
-         --  High nibble: 4 doublings via P2 chain (saves 4 Mul vs Point_Double)
          Nibble := Unsigned_64 (Shift_Right (S (I), 4));
-         declare
-            P2 : Proj_Point := Ext_To_P2 (R);
-         begin
-            P2 := P1xP1_To_P2 (Double_P2 (P2));  --  3 Mul
-            P2 := P1xP1_To_P2 (Double_P2 (P2));  --  3 Mul
-            P2 := P1xP1_To_P2 (Double_P2 (P2));  --  3 Mul
-            R  := P1xP1_To_Ext (Double_P2 (P2));  --  4 Mul (need T for Add)
-         end;
-         CT_Add (R, Nibble);
-
-         --  Low nibble: 4 doublings via P2 chain
+         CT_Add (R, BT.Position (I), Nibble);
+      end loop;
+      declare
+         P2 : Proj_Point := Ext_To_P2 (R);
+      begin
+         P2 := P1xP1_To_P2 (Double_P2 (P2));
+         P2 := P1xP1_To_P2 (Double_P2 (P2));
+         P2 := P1xP1_To_P2 (Double_P2 (P2));
+         R := P1xP1_To_Ext (Double_P2 (P2));
+      end;
+      for I in N32 range 0 .. 31 loop
+         pragma Loop_Invariant (Is_Valid (R));
          Nibble := Unsigned_64 (S (I) and 16#0F#);
-         declare
-            P2 : Proj_Point := Ext_To_P2 (R);
-         begin
-            P2 := P1xP1_To_P2 (Double_P2 (P2));
-            P2 := P1xP1_To_P2 (Double_P2 (P2));
-            P2 := P1xP1_To_P2 (Double_P2 (P2));
-            R  := P1xP1_To_Ext (Double_P2 (P2));
-         end;
-         CT_Add (R, Nibble);
+         CT_Add (R, BT.Position (I), Nibble);
       end loop;
 
       return R;
