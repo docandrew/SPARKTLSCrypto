@@ -39,6 +39,8 @@
               gnugrep
               gnused
               gnumake
+              openssl
+              openssl.dev
               patchelf
               valgrind
               valgrind.dev

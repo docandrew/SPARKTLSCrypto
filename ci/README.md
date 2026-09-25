@@ -83,3 +83,12 @@ the modulus is further checked against HACL*'s F*-verified
 exported to the dev shell as `HACL_STAR_SRC`, compiled through
 `tests/fuzz/hacl_oracle.c`; the library itself stays C-free). A mismatch
 prints the operands in hex and fails the lane.
+
+## Prepared AES-GCM
+
+`ci/prepared.sh`, included in `ci/check.sh`, runs the independent OpenSSL EVP
+comparison with runtime and contract checks enabled, in both accelerated and
+portable configurations. It requires OpenSSL headers and libcrypto, supplied by
+the development shell. The production library retains its Ada/assembly-only
+linkage. See `tests/prepared/README.md` for alignment, lifecycle, timing, and
+benchmark coverage. `ct_prepared` is included in the ctgrind lane.

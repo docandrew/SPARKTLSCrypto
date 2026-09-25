@@ -9,7 +9,7 @@ project Timing is
    for Exec_Dir use "bin";
    for Languages use ("Ada", "C");
    for Source_Dirs use (".");
-   for Main use ("ct_chacha20_poly1305.adb",
+   for Main use ("ct_prepared.adb", "ct_chacha20_poly1305.adb",
                  "ct_negative_control.adb",
                  "ct_x25519.adb",
                  "ct_ed25519.adb",
