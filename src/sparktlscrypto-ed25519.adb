@@ -219,7 +219,6 @@ is
    ----------------------------------------------------------------------------
 
    package BT renames SPARKTLSCrypto.Ed25519_Base_Table;
-   subtype Table_Index is BT.Digit;
 
    ----------------------------------------------------------------------------
    --  Sum high nibbles with the position tables, multiply by 16, then add
@@ -242,35 +241,10 @@ is
       with Pre  => Idx <= 15,
            Post => Is_Valid (CT_Lookup'Result)
       is
-         Result : Ext_Point := Identity;
+         P : constant BT.Affine_Point := BT.Lookup (Position, Idx);
       begin
-         for K in Table_Index loop
-            pragma Loop_Invariant (Is_Valid (Result));
-            --  CT equality: diff = K xor Idx. If equal, diff = 0.
-            --  Collapse all bits: if any bit set, result is nonzero.
-            declare
-               Entry_Point : constant BT.Affine_Point := BT.Point_At (Position, K);
-               Diff : Unsigned_64 := Unsigned_64 (K) xor Idx;
-               Eq   : Unsigned_64;
-               M    : Unsigned_64;
-            begin
-               --  Fold diff to bit 0: nonzero → 1, zero → 0
-               Diff := Diff or Shift_Right (Diff, 32);
-               Diff := Diff or Shift_Right (Diff, 16);
-               Diff := Diff or Shift_Right (Diff, 8);
-               Diff := Diff or Shift_Right (Diff, 4);
-               Diff := Diff or Shift_Right (Diff, 2);
-               Diff := Diff or Shift_Right (Diff, 1);
-               Eq := 1 - (Diff and 1);  --  1 if K=Idx, 0 otherwise
-               M := -Eq;               --  all-ones if K=Idx, 0 otherwise
-               for L in 0 .. 4 loop
-                  Result.X (L) := Result.X (L) xor (M and (Result.X (L) xor Entry_Point.X (L)));
-                  Result.Y (L) := Result.Y (L) xor (M and (Result.Y (L) xor Entry_Point.Y (L)));
-                  Result.T (L) := Result.T (L) xor (M and (Result.T (L) xor Entry_Point.T (L)));
-               end loop;
-            end;
-         end loop;
-         return Result;
+         return (X => (P.X (0), P.X (1), P.X (2), P.X (3), P.X (4)), Y => (P.Y (0), P.Y (1), P.Y (2), P.Y (3), P.Y (4)),
+                 Z => Fiat_25519.FE_One, T => (P.T (0), P.T (1), P.T (2), P.T (3), P.T (4)));
       end CT_Lookup;
 
       --  Constant-time conditional point add: always does the add,

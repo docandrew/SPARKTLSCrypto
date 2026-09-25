@@ -4,11 +4,14 @@ with Interfaces; use Interfaces;
 package SPARKTLSCrypto.Ed25519_Base_Table with SPARK_Mode => On is
    subtype Position is Natural range 0 .. 31;
    subtype Digit is Natural range 1 .. 15;
+   subtype Nibble is Unsigned_64 range 0 .. 15;
    subtype Limb is Unsigned_64 range 0 .. 16#7_FFFF_FFFF_FFFF#;
    type Coordinate is array (Natural range 0 .. 4) of Limb;
    type Affine_Point is record
       X, Y, T : Coordinate;
    end record;
-   function Point_At (I : Position; K : Digit) return Affine_Point
-     with Inline, Global => null;
+   type Point_Row is array (Digit) of Affine_Point;
+   --  I is public; K is secret. Scan every entry of the selected row.
+   function Lookup (I : Position; K : Nibble) return Affine_Point
+     with Global => null;
 end SPARKTLSCrypto.Ed25519_Base_Table;
