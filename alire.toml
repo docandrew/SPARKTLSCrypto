@@ -15,4 +15,4 @@ gnatprove = "^16.0.0"
 gnat = "^16.0.0"
 
 [[depends-on]]
-sparknacl = "^4.0.0"
+sparknacl = "^4.0.1"   #  4.0.1 builds itself with -fno-tree-vrp; 4.0.0 does not

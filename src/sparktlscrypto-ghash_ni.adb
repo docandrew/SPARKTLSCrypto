@@ -1,9 +1,14 @@
 --  PCLMULQDQ-accelerated GF(2^128) multiplication for GHASH (body).
 --  See sparktlscrypto-ghash_ni.ads.
 --
---  Algorithm cribbed from BoringSSL's `gcm_gmult_clmul` macro
---  (which itself follows Shay Gueron's "Intel Carry-Less
---  Multiplication Instruction" paper, Algorithm 5).
+--  The multiply and reduction follow S. Gueron and M. E. Kounavis,
+--  "Intel Carry-Less Multiplication Instruction and its Usage for
+--  Computing the GCM Mode" (Intel white paper): four-way schoolbook
+--  PCLMULQDQ, a 1-bit shift of the product, and the shift-XOR
+--  reduction of its Algorithm 4; the 4-block aggregation is its
+--  Algorithm 5. Written with reference to gcm_gmult_clmul in
+--  ghash-x86_64.pl by Andy Polyakov for the OpenSSL project, as
+--  carried in BoringSSL (Apache License 2.0); no code is taken from it.
 --
 --  Bit/byte ordering note: NIST GHASH (SP 800-38D §6.2) numbers
 --  polynomial coefficients so that bit 0 of byte 0 holds u^0 (the

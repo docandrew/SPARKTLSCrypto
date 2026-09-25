@@ -47,6 +47,7 @@ pxor
 ret
 rol
 ror
+sar
 sha256msg1
 sha256msg2
 sha256rnds2

@@ -5,6 +5,7 @@ cmp
 cpuid
 imul
 jbe
+jg
 jge
 jl
 jle

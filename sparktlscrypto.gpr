@@ -73,6 +73,11 @@ project SPARKTLSCrypto is
       when others => null;
    end case;
 
+   --  -fno-tree-vrp: GCC's value-range propagation miscompiles code of this
+   --  kind in GNAT 15.2 and 16.1 (the GCC 14 change SPARKNaCl works around the
+   --  same way). Measured 2026-09-24 on SPARKNaCl's SHA-256: at -O2 and -O3
+   --  every digest was wrong; with this flag, or at -O1, or with GNAT 13.2,
+   --  all were right. Optimised modes only: -Og does not run the pass.
    Build_Switches := ();
    AES_NI_Switches := ("-maes", "-mpclmul", "-mssse3");
    ADX_Switches    := ("-mbmi2", "-madx");
@@ -84,11 +89,13 @@ project SPARKTLSCrypto is
       when "optimize" =>
          Build_Switches := ("-O3",
                             "-gnatn",
+                            "-fno-tree-vrp",
                             "-march=x86-64-v2",
                             "-fno-tree-vectorize");
       when "native" =>
          Build_Switches := ("-O3",
                             "-gnatn",
+                            "-fno-tree-vrp",
                             "-march=native",
                             "-mtune=native");
       when "debug" =>
@@ -103,6 +110,7 @@ project SPARKTLSCrypto is
          --  runtime CPUID dispatch runs.
          Build_Switches :=
            ("-O2", "-g",
+            "-fno-tree-vrp",
             "-march=x86-64-v2",
             "-fno-tree-vectorize");
    end case;
