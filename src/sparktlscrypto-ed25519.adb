@@ -213,12 +213,43 @@ is
    end Point_Double;
 
    ----------------------------------------------------------------------------
-   --  Position-specific affine points [k * 256**i]B. Each lookup scans all
-   --  fifteen entries at the public byte position; the scalar is never used
-   --  as a memory index. Z is one for all entries, including the identity.
+   --  Position-specific cached points [k * 256**i]B: Y+X, Y-X, 2*d*X*Y.
+   --  Each lookup scans all fifteen entries at the public byte position;
+   --  the scalar is never used as a memory index. Z=1 is implicit.
    ----------------------------------------------------------------------------
 
    package BT renames SPARKTLSCrypto.Ed25519_Base_Table;
+
+   --  Q has affine Z=1; its public Y+X, Y-X and 2*d*X*Y are
+   --  precomputed. Substituting these into Point_Add removes two field
+   --  multiplications, leaving seven, with the same Edwards group result.
+   function Point_Add_Mixed (P : Ext_Point; Q : BT.Cached_Point) return Ext_Point
+   with Pre => Is_Valid (P), Post => Is_Valid (Point_Add_Mixed'Result)
+   is
+      YPX : constant Fiat_25519.FE :=
+        (Q.Y_Plus_X (0), Q.Y_Plus_X (1), Q.Y_Plus_X (2),
+         Q.Y_Plus_X (3), Q.Y_Plus_X (4));
+      YMX : constant Fiat_25519.FE :=
+        (Q.Y_Minus_X (0), Q.Y_Minus_X (1), Q.Y_Minus_X (2),
+         Q.Y_Minus_X (3), Q.Y_Minus_X (4));
+      XY2D : constant Fiat_25519.FE :=
+        (Q.XY2D (0), Q.XY2D (1), Q.XY2D (2), Q.XY2D (3), Q.XY2D (4));
+      A : constant Fiat_25519.FE :=
+        Fiat_25519.Mul (Fiat_25519.Sub (P.Y, P.X), YMX);
+      B : constant Fiat_25519.FE :=
+        Fiat_25519.Mul (Fiat_25519.Add (P.Y, P.X), YPX);
+      C : constant Fiat_25519.FE := Fiat_25519.Mul (P.T, XY2D);
+      D : Fiat_25519.FE := Fiat_25519.Add (P.Z, P.Z);
+      E : constant Fiat_25519.FE := Fiat_25519.Sub (B, A);
+      F, G, H : Fiat_25519.FE;
+   begin
+      Fiat_25519.Carry (D);
+      F := Fiat_25519.Sub (D, C);
+      G := Fiat_25519.Add (D, C);
+      H := Fiat_25519.Add (B, A);
+      return (X => Fiat_25519.Mul (E, F), Y => Fiat_25519.Mul (H, G),
+              Z => Fiat_25519.Mul (G, F), T => Fiat_25519.Mul (E, H));
+   end Point_Add_Mixed;
 
    ----------------------------------------------------------------------------
    --  Sum high nibbles with the position tables, multiply by 16, then add
@@ -235,26 +266,14 @@ is
       R : Ext_Point := Identity;
       Nibble : Unsigned_64;
 
-      --  Constant-time lookup at a public byte position, or identity
-      --  Always touches every table entry to avoid timing leaks.
-      function CT_Lookup (Position : BT.Position; Idx : Unsigned_64) return Ext_Point
-      with Pre  => Idx <= 15,
-           Post => Is_Valid (CT_Lookup'Result)
-      is
-         P : constant BT.Affine_Point := BT.Lookup (Position, Idx);
-      begin
-         return (X => (P.X (0), P.X (1), P.X (2), P.X (3), P.X (4)), Y => (P.Y (0), P.Y (1), P.Y (2), P.Y (3), P.Y (4)),
-                 Z => Fiat_25519.FE_One, T => (P.T (0), P.T (1), P.T (2), P.T (3), P.T (4)));
-      end CT_Lookup;
-
       --  Constant-time conditional point add: always does the add,
       --  then selects old or new result based on whether nibble is 0.
       procedure CT_Add (Acc : in out Ext_Point; Position : BT.Position; Nibble : Unsigned_64)
       with Pre  => Is_Valid (Acc) and Nibble <= 15,
            Post => Is_Valid (Acc)
       is
-         T     : constant Ext_Point := CT_Lookup (Position, Nibble);
-         Sum   : constant Ext_Point := Point_Add (Acc, T);
+         T     : constant BT.Cached_Point := BT.Lookup (Position, Nibble);
+         Sum   : constant Ext_Point := Point_Add_Mixed (Acc, T);
          --  Select: if Nibble = 0, keep Acc; else use Sum
          Nz    : Unsigned_64 := Nibble;
          M     : Unsigned_64;
