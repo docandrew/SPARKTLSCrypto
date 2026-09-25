@@ -60,7 +60,8 @@ end SPARKTLSCrypto.Ed25519_Base_Table;
         lines.append(f"   Row_{position} : constant Row := (")
         for digit in range(1, 16):
             point = add(point, base)
-            assert valid(point)
+            if not valid(point):
+                raise ValueError(f"off-curve point at position {position}, digit {digit}")
             x, y = point
             lines.extend([
                 f"         {digit} => (X => {limbs(x)},",
