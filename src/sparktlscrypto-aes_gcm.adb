@@ -1179,16 +1179,14 @@ is
             pragma Loop_Invariant (Pos <= Len and Pos mod 256 = 0);
             AES_GCM_AVX512.Build_Ctr_Block_16 (CB, Ctr_256);
             if Context.Is_256 then
-               AES_GCM_AVX512.Cipher_16x_256_VAES_XOR
-                 (Buf (Base + Pos .. Base + Pos + 255), Ctr_256,
-                  Context.Rounds);
+               AES_GCM_AVX512.Encrypt_GCM_Stripe_16_256
+                 (Buf (Base + Pos .. Base + Pos + 255), S, Ctr_256,
+                  Context.Rounds, Context.Powers_16);
             else
-               AES_GCM_AVX512.Cipher_16x_128_VAES_XOR
-                 (Buf (Base + Pos .. Base + Pos + 255), Ctr_256,
-                  Context.Rounds (0 .. 175));
+               AES_GCM_AVX512.Encrypt_GCM_Stripe_16_128
+                 (Buf (Base + Pos .. Base + Pos + 255), S, Ctr_256,
+                  Context.Rounds (0 .. 175), Context.Powers_16);
             end if;
-            AES_GCM_AVX512.GHASH_16_Blocks
-              (S, Buf (Base + Pos .. Base + Pos + 255), Context.Powers_16);
             Pos := Pos + 256;
          end loop;
       elsif Len >= 128 then

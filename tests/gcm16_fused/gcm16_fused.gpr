@@ -1,0 +1,11 @@
+with "../../sparktlscrypto.gpr";
+project GCM16_Fused is
+ for Create_Missing_Dirs use "True";
+ for Source_Dirs use (".");
+ for Object_Dir use "obj";
+ for Exec_Dir use "bin";
+ for Main use ("test_fused.adb");
+ package Compiler is
+  for Default_Switches ("Ada") use ("-O3","-g","-gnat2022","-gnata","-gnato");
+ end Compiler;
+end GCM16_Fused;
