@@ -86,6 +86,12 @@ is
       x30 := x22 + (x18 + (x15 + (x13 + x1)));
       x31 := x23 + (x19 + (x16 + (x5 + x2)));
       x32 := x24 + (x20 + (x8 + (x6 + x3)));
+      pragma Assert (x1 <= Product19_Bound);
+      pragma Assert (x13 <= Product_Bound);
+      pragma Assert (x15 <= Product_Bound);
+      pragma Assert (x18 <= Product_Bound);
+      pragma Assert (x22 <= Product_Bound);
+      pragma Assert (x30 <= 4 * Product_Bound + Product19_Bound);
       pragma Assert (x2 <= Product19_Bound);
       pragma Assert (x3 <= Product19_Bound);
       pragma Assert (x5 <= Product19_Bound);
@@ -118,6 +124,7 @@ is
       pragma Assert (x37 <= 3_422_735_716_801_578_480);
       x38 := Unsigned_64 (x36 and 16#7_FFFF_FFFF_FFFF#);
       x39 := Unsigned_128 (x37) + x30;
+      pragma Assert (x39 <= 3_422_735_716_801_578_480 + 4 * Product_Bound + Product19_Bound);
       pragma Assert (Shift_Right (x39, 51) <= Unsigned_128 (Unsigned_64'Last));
       x40 := Unsigned_64 (Shift_Right (x39, 51));
       pragma Assert (x40 <= 970_762_751_257_677_177);

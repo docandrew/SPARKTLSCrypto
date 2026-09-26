@@ -108,3 +108,19 @@ Optional timing checks live under `tests/timing`:
 nix develop --command bash ci/timing.sh ctgrind
 nix develop --command bash ci/timing.sh dudect
 ```
+
+## Acknowledgements
+
+Thank you to Chris Allen ([@bitemyapp](https://github.com/bitemyapp)) for a
+substantial set of performance and constant-time contributions, each with
+differential, timing and benchmark evidence:
+
+- A precomputed fixed-base Curve25519 table, with a constant-time row scan and
+  cached mixed addition, for X25519 key generation and Ed25519 signing
+- Prepared AES-GCM keys
+- A shorter AVX-512 GHASH reduction
+- Fused sixteen-block VAES/GHASH
+- 64-bit carries in Curve25519 field multiplication
+- Removal of secret-dependent branches from the portable GHASH
+- Tracing the GCC array-slice miscompilation behind the `-fno-tree-vrp` build
+  flag to its root cause
