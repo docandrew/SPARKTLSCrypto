@@ -24,6 +24,7 @@ is
       Z : Bytes_16 := (others => 0);
       V : Bytes_16 := X;
       LSB : Byte;
+      Mask : Byte;
 
       procedure Shift_Right_1 (W : in out Bytes_16) is
          Carry : Byte := 0;
@@ -38,20 +39,18 @@ is
       end Shift_Right_1;
    begin
       for I in 0 .. 127 loop
-         if (Y (N32 (I / 8)) and
-             Byte (Shift_Right (Unsigned_8 (16#80#), I mod 8))) /= 0
-         then
-            for J in 0 .. 15 loop
-               Z (N32 (J)) := Z (N32 (J)) xor V (N32 (J));
-            end loop;
-         end if;
+         --  The selected bit is secret. Byte subtraction is modular:
+         --  0 - 0 = 0 and 0 - 1 = 255, selecting the same XOR as NIST
+         --  Algorithm 1 without a secret-dependent branch.
+         Mask := 0 - (Shift_Right (Y (N32 (I / 8)), 7 - I mod 8) and 1);
+         for J in 0 .. 15 loop
+            Z (N32 (J)) := Z (N32 (J)) xor (V (N32 (J)) and Mask);
+         end loop;
 
          LSB := V (15) and 1;
          Shift_Right_1 (V);
 
-         if LSB /= 0 then
-            V (0) := V (0) xor 16#E1#;
-         end if;
+         V (0) := V (0) xor (16#E1# and (0 - LSB));
       end loop;
       return Z;
    end SW_GF128_Mul;

@@ -137,6 +137,7 @@ run_one ct_p384_ecdsa        exact 1 || fail=1
 run_one ct_p384_ecdsa_verify clean || fail=1
 run_one ct_p256_ecdsa_verify clean || fail=1
 run_one ct_hkdf              clean || fail=1
+run_one ct_prepared clean || fail=1
 run_one ct_aes_gcm           clean || fail=1
 run_one ct_aead_decrypt      clean || fail=1
 run_one ct_rfc6979           clean || fail=1

@@ -11,6 +11,40 @@ with SPARKNaCl.AES;
 package SPARKTLSCrypto.AES_GCM with
    SPARK_Mode => On
 is
+   --  Per-key preparation for repeated in-place encryption. The context
+   --  owns no nonce or record counter. Call Prepare again when installing
+   --  a different key, and Clear before releasing the context.
+   --  Hardware round keys and GHASH powers are reused on supported CPUs;
+   --  the portable path retains the existing one-shot implementation.
+   type Prepared_Key is private;
+
+   Unprepared_Key : constant Prepared_Key;
+
+   function Is_Prepared (Context : Prepared_Key) return Boolean;
+
+   procedure Prepare_128
+     (Context : out Prepared_Key; K : in AES.AES128_Key)
+   with Post => Is_Prepared (Context);
+
+   procedure Prepare_256
+     (Context : out Prepared_Key; K : in AES.AES256_Key)
+   with Post => Is_Prepared (Context);
+
+   procedure Clear (Context : out Prepared_Key)
+   with Post => not Is_Prepared (Context);
+
+   procedure Encrypt_Prepared
+     (Buf     : in out Byte_Seq;
+      Tag     : out Bytes_16;
+      N       : in Bytes_12;
+      Context : in Prepared_Key;
+      AAD     : in Byte_Seq)
+   with Pre => Is_Prepared (Context)
+               and AAD'First = 0
+               and Buf'Length > 0
+               and Buf'Last < N32'Last
+               and AAD'Last < N32'Last;
+
    ----------------------------------------------------------------------------
    --  AES-128-GCM
    ----------------------------------------------------------------------------
@@ -130,4 +164,21 @@ is
                AAD'Length > 0 and then
                AAD'Last < N32'Last;
 
+private
+   type Prepared_Key is record
+      Ready    : Boolean := False;
+      Is_256   : Boolean := False;
+      Hardware : Boolean := False;
+      --  Raw key supports the portable fallback. AES128 uses only 0..15.
+      Raw_Key  : Bytes_32 := (others => 0);
+      Rounds   : Byte_Seq (0 .. 239) := (others => 0);
+      H        : Bytes_16 := (others => 0);
+      Powers_4 : Byte_Seq (0 .. 63) := (others => 0);
+      Powers_16 : Byte_Seq (0 .. 255) := (others => 0);
+   end record;
+
+   Unprepared_Key : constant Prepared_Key := (others => <>);
+
+   function Is_Prepared (Context : Prepared_Key) return Boolean
+   is (Context.Ready);
 end SPARKTLSCrypto.AES_GCM;

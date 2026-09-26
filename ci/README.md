@@ -83,3 +83,30 @@ the modulus is further checked against HACL*'s F*-verified
 exported to the dev shell as `HACL_STAR_SRC`, compiled through
 `tests/fuzz/hacl_oracle.c`; the library itself stays C-free). A mismatch
 prints the operands in hex and fails the lane.
+
+## Prepared AES-GCM
+
+`ci/prepared.sh`, included in `ci/check.sh`, runs the independent OpenSSL EVP
+comparison with runtime and contract checks enabled, in both accelerated and
+portable configurations. It requires OpenSSL headers and libcrypto, supplied by
+the development shell. The production library retains its Ada/assembly-only
+linkage. See `tests/prepared/README.md` for alignment, lifecycle, timing, and
+benchmark coverage. `ct_prepared` is included in the ctgrind lane.
+
+## Field25519 carry widths
+
+`ci/field25519.sh`, included in `ci/check.sh`, compares 31,800 results against
+OpenSSL bignum arithmetic with runtime checks and contracts enabled, then
+restores the caller's build configuration. It covers the full documented limb
+bounds and checks the exact-limb digest captured before the carry-width change.
+See `tests/field25519/README.md` for primitive benchmarks, timing checks and the
+related X25519/Ed25519 validation commands.
+
+## GHASH16 reduction
+
+ci/ghash16.sh, included in ci/check.sh, verifies the Montgomery reduction
+algebra on every operand basis pair and compares the compiled AVX-512 kernel
+with independent bit-serial GHASH. The saved pre-change digest also has to
+match. See tests/ghash16/README.md for the argument, coverage and limitations.
+The instruction allowlist adds only immediate-control vpshufd, a fixed
+shuffle with operand-independent timing and no new feature requirement.

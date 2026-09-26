@@ -96,4 +96,22 @@ is
       H_Powers : in     Pre_H_Powers_16)
    with Pre => Blocks'Length = 256;
 
+   --  Equivalent to Cipher_16x_*_VAES_XOR followed by GHASH_16_Blocks,
+   --  retaining ciphertext in registers between the two phases.
+   procedure Encrypt_GCM_Stripe_16_128
+     (Buf      : in out Byte_Seq;
+      S        : in out Bytes_16;
+      Counter  : in     Bytes_256;
+      Pre_RK   : in     AES_NI.Pre_Swapped_RKs_128;
+      H_Powers : in     Pre_H_Powers_16)
+   with Pre => Buf'Length = 256;
+
+   procedure Encrypt_GCM_Stripe_16_256
+     (Buf      : in out Byte_Seq;
+      S        : in out Bytes_16;
+      Counter  : in     Bytes_256;
+      Pre_RK   : in     AES_NI.Pre_Swapped_RKs_256;
+      H_Powers : in     Pre_H_Powers_16)
+   with Pre => Buf'Length = 256;
+
 end SPARKTLSCrypto.AES_GCM_AVX512;

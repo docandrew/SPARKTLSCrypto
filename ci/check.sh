@@ -10,5 +10,10 @@ export NO_COLOR=1
 ci/versions.sh
 ci/build.sh
 ci/smoke.sh
+ci/prepared.sh
+ci/ghash16.sh
+ci/gcm16_fused.sh
+ci/field25519.sh
+ci/base25519.sh
 ci/kat.sh
 ci/residue.sh

@@ -37,6 +37,7 @@ vpclmullqhqdq
 vpclmullqlqdq
 vpor
 vpshufb
+vpshufd
 vpslld
 vpslldq
 vpsrld

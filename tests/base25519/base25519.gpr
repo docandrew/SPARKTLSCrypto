@@ -1,0 +1,16 @@
+with "../../sparktlscrypto.gpr";
+project Base25519 is
+   for Create_Missing_Dirs use "True";
+   for Source_Dirs use (".");
+   for Object_Dir use "obj";
+   for Exec_Dir use "bin";
+   for Languages use ("Ada", "C");
+   for Main use ("test_base25519.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use ("-O3", "-g", "-gnat2022", "-gnata");
+      for Default_Switches ("C") use ("-O2", "-Wall", "-Wextra", "-Werror");
+   end Compiler;
+   package Linker is
+      for Default_Switches ("Ada") use ("-lcrypto");
+   end Linker;
+end Base25519;
