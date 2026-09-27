@@ -718,6 +718,35 @@ procedure Smoke_Tests is
       Check ("ed25519 asr4 negative floor", Test_ASR_4 (-17) = -2);
    end Test_Ed25519_ASR;
 
+   --  FIPS 186-5 7.3: non-canonical public-key encodings fail to decode.
+   --  Signature (R, S) = (identity, 0) verifies under the identity as
+   --  public key for any message, so the only thing that can reject it
+   --  below is the decoding of A. The control also pins the field
+   --  encoding: the identity's x = 0 and y = 1 are held as p and p + 1
+   --  here, which used to encode as 19 and 20.
+   procedure Test_Ed25519_Strict_Decoding is
+      use SPARKTLSCrypto.Ed25519;
+      SM : Byte_Seq (0 .. 64) := (0 => 1, 64 => 16#AB#, others => 0);
+      M  : Byte_Seq (0 .. 64);
+      OK : Boolean;
+      N  : I32;
+      Canonical : constant Bytes_32 := (0 => 1, others => 0);
+      Sign_Bit  : constant Bytes_32 := (0 => 1, 31 => 16#80#, others => 0);
+      Y_Plus_P  : constant Bytes_32 :=
+        (0 => 16#EE#, 31 => 16#7F#, others => 16#FF#);
+   begin
+      Open (M, OK, N, SM, Canonical);
+      Check ("ed25519 control: canonical identity key verifies", OK);
+      Open (M, OK, N, SM, Sign_Bit);
+      Check ("ed25519 x = 0 with sign bit rejected", not OK);
+      Open (M, OK, N, SM, Y_Plus_P);
+      Check ("ed25519 y >= p rejected", not OK);
+      SM (0 .. 31) := Byte_Seq (Sign_Bit);
+      Open (M, OK, N, SM, Canonical);
+      Check ("ed25519 non-canonical R rejected", not OK);
+   end Test_Ed25519_Strict_Decoding;
+
+
    procedure Test_AES_GCM_Roundtrip is
       K_Raw : constant Bytes_16 := (others => 0);
       K : SPARKNaCl.AES.AES128_Key;
@@ -907,6 +936,7 @@ begin
    Test_HMAC_DRBG;
    Test_P384_Blinding;
    Test_Ed25519_ASR;
+   Test_Ed25519_Strict_Decoding;
    Test_AES_GCM_Roundtrip;
    Test_ChaCha20_Poly1305_Smoke;
    Test_RSA_Verify;

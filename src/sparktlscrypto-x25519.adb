@@ -132,7 +132,18 @@ is
       Q := (T (3) + Q) / (2**51);
       Q := (T (4) + Q) / (2**51);
       T (0) := T (0) + 19 * Q;
-      Fiat_25519.Carry (T);
+      --  Final carry as in ref10: propagate through the limbs and DROP the
+      --  carry out of limb 4 (that is the subtraction of 2^255). Carry would
+      --  fold it back in as 19, so a value held as x + p encoded as x + 19.
+      T (1) := T (1) + Shift_Right (T (0), 51);
+      T (0) := T (0) and Fiat_25519.Mask51;
+      T (2) := T (2) + Shift_Right (T (1), 51);
+      T (1) := T (1) and Fiat_25519.Mask51;
+      T (3) := T (3) + Shift_Right (T (2), 51);
+      T (2) := T (2) and Fiat_25519.Mask51;
+      T (4) := T (4) + Shift_Right (T (3), 51);
+      T (3) := T (3) and Fiat_25519.Mask51;
+      T (4) := T (4) and Fiat_25519.Mask51;
 
       S := (others => 0);
       H := T (0) or Shift_Left (T (1), 51);

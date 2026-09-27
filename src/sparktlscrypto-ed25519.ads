@@ -11,6 +11,13 @@ package SPARKTLSCrypto.Ed25519 with
    SPARK_Mode => On
 is
    --  Sign a message. SM receives the 64-byte signature followed by M.
+   --
+   --  The nonce is deterministic (RFC 8032, FIPS 186-5 7.6): the same key
+   --  and message always give the same nonce. A caller that signs a
+   --  message an attacker can make it sign twice, with one run faulted
+   --  (Rowhammer, glitching), gives up the private key from the two
+   --  signatures. Include fresh randomness of your own in every signed
+   --  message; TLS does, through its handshake randoms.
    procedure Sign
      (SM : out Byte_Seq;
       M  : in  Byte_Seq;
@@ -20,12 +27,10 @@ is
                and M'First = 0;
 
    --  Verify a signed message. If valid, M(0..Msg_Len-1) holds the message.
-   --  Acceptance policy (RFC 8032 5.1.7, TweetNaCl semantics): S < L and a
-   --  canonical R are required; a NON-canonical encoding of the public key
-   --  A (y >= p) is accepted, as in TweetNaCl/ref10. This is not the
-   --  strict/cofactorless verification of FIPS 186-5 -- callers that need
-   --  signature uniqueness across encodings must reject non-canonical A
-   --  themselves (TLS certificate keys are canonical by construction).
+   --  Acceptance policy (FIPS 186-5 7.7): S < L, a canonical R, and a public
+   --  key A that decodes under 7.3 -- its y-coordinate below p, and not
+   --  x = 0 with the sign bit set. The check is cofactorless,
+   --  [S]B = R + [k]A, which 7.7 step 3 allows.
    procedure Open
      (M       :    out Byte_Seq;
       Valid   :    out Boolean;

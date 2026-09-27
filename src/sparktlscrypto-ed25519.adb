@@ -358,7 +358,18 @@ is
       Q := (T (3) + Q) / (2**51);
       Q := (T (4) + Q) / (2**51);
       T (0) := T (0) + 19 * Q;
-      Fiat_25519.Carry (T);
+      --  Final carry as in ref10: propagate through the limbs and DROP the
+      --  carry out of limb 4 (that is the subtraction of 2^255). Carry would
+      --  fold it back in as 19, so a value held as x + p encoded as x + 19.
+      T (1) := T (1) + Shift_Right (T (0), 51);
+      T (0) := T (0) and Fiat_25519.Mask51;
+      T (2) := T (2) + Shift_Right (T (1), 51);
+      T (1) := T (1) and Fiat_25519.Mask51;
+      T (3) := T (3) + Shift_Right (T (2), 51);
+      T (2) := T (2) and Fiat_25519.Mask51;
+      T (4) := T (4) + Shift_Right (T (3), 51);
+      T (3) := T (3) and Fiat_25519.Mask51;
+      T (4) := T (4) and Fiat_25519.Mask51;
       R := (others => 0);
       H := T (0) or Shift_Left (T (1), 51);
       Store64 (R, 0, H);
@@ -446,6 +457,27 @@ is
          return Byte_Seq (BA) = Byte_Seq (BB);
       end FE_Eq;
 
+      --  FIPS 186-5 7.3 decoding, step 1: the y-coordinate is the encoding
+      --  with the sign bit cleared, and decoding fails if it is >= p, where
+      --  p = 2^255 - 19 is 16#ED#, 16#FF# x 30, 16#7F# little-endian. The
+      --  key is public, so the early exits leak nothing.
+      function Y_Below_P return Boolean is
+      begin
+         if (PK (31) and 127) /= 127 or else PK (0) < 16#ED# then
+            return True;
+         end if;
+         for I in N32 range 1 .. 30 loop
+            if PK (I) /= 16#FF# then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Y_Below_P;
+
+      Invalid : constant Ext_Point :=
+        (X => Fiat_25519.FE_Zero, Y => Fiat_25519.FE_One,
+         Z => Fiat_25519.FE_One, T => Fiat_25519.FE_Zero);
+
       R1   : constant Fiat_25519.FE := Bytes_To_FE (PK);
       R1_Sq   : constant Fiat_25519.FE := Fiat_25519.Sqr (R1);
       Num     : constant Fiat_25519.FE := Fiat_25519.Sub (R1_Sq, Fiat_25519.FE_One);
@@ -458,6 +490,12 @@ is
       R0  : Fiat_25519.FE;
       Chk : Fiat_25519.FE;
    begin
+      if not Y_Below_P then
+         R := Invalid;
+         Valid := False;
+         return;
+      end if;
+
       R0  := Fiat_25519.Mul (Pow2523 (Fiat_25519.Mul (Den4, Num_Den3)), Num_Den3);
 
       Chk := Fiat_25519.Mul (Fiat_25519.Sqr (R0), Den);
@@ -467,8 +505,15 @@ is
 
       Chk := Fiat_25519.Mul (Fiat_25519.Sqr (R0), Den);
       if not FE_Eq (Chk, Num) then
-         R := (X => Fiat_25519.FE_Zero, Y => Fiat_25519.FE_One,
-               Z => Fiat_25519.FE_One, T => Fiat_25519.FE_Zero);
+         R := Invalid;
+         Valid := False;
+         return;
+      end if;
+
+      --  FIPS 186-5 7.3 decoding: x = 0 with the sign bit set has
+      --  no valid encoding.
+      if FE_Eq (R0, Fiat_25519.FE_Zero) and then PK (31) / 128 = 1 then
+         R := Invalid;
          Valid := False;
          return;
       end if;
