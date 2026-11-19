@@ -9,6 +9,7 @@ with SPARKNaCl.AES;
 with SPARKTLSCrypto.AES_NI;
 with SPARKTLSCrypto.GHASH_NI;
 with SPARKTLSCrypto.AES_GCM_AVX512;
+with SPARKTLSCrypto.AES_GCM_AVX2;
 with SPARKTLSCrypto.AES_GCM; use SPARKTLSCrypto.AES_GCM;
 
 --  Two sections, both printed as CSV (sample zero is warmup):
@@ -19,7 +20,10 @@ with SPARKTLSCrypto.AES_GCM; use SPARKTLSCrypto.AES_GCM;
 --            (one TLS record), followed by a median / IQR / range summary
 --            per implementation.
 --
---  With no argument both sections run; "prepared" or "aead" runs one.
+--  With no argument both sections run; "prepared" or "aead" runs one. A
+--  second argument (portable, aes-ni, vaes-256, vaes-512) restricts
+--  SPARKTLSCrypto to that AES-GCM tier by overwriting the CPUID tier
+--  flags (test code only; the tier must exist on the CPU).
 procedure Bench_Prepared is
    K128 : constant AES.AES128_Key := AES.Construct (Bytes_16'(others => 42));
    K256 : constant AES.AES256_Key := AES.Construct (Bytes_32'(others => 42));
@@ -79,6 +83,10 @@ procedure Bench_Prepared is
    use type Interfaces.C.int;
    use type System.Address;
 
+   --  Keeps the copy-only row from being optimised away.
+   procedure Copy_Barrier (Addr : System.Address)
+     with Import, Convention => C, External_Name => "bench_barrier";
+
    function OSSL_New (Key : System.Address; Bits, Decrypt : Interfaces.C.int)
      return System.Address
      with Import, Convention => C, External_Name => "openssl_gcm_bench_new";
@@ -101,12 +109,16 @@ procedure Bench_Prepared is
    type Impl is
      (STC_Encrypt_Prepared,  --  in place, prepared context
       STC_Decrypt,           --  one-shot Decrypt / Decrypt_256, C -> M
+      STC_Decrypt_Prepared,  --  copy C into Buf, then decrypt in place
+      Copy_Only,             --  the copy alone, to subtract
       OSSL_Encrypt,          --  EVP, in place, key set once
       OSSL_Decrypt);         --  EVP, C -> M, key set once
 
    Impl_Name : constant array (Impl) of access constant String :=
      (STC_Encrypt_Prepared => new String'("stc.encrypt_prepared"),
       STC_Decrypt          => new String'("stc.decrypt"),
+      STC_Decrypt_Prepared => new String'("stc.decrypt_prepared+copy"),
+      Copy_Only            => new String'("copy"),
       OSSL_Encrypt         => new String'("openssl.encrypt"),
       OSSL_Decrypt         => new String'("openssl.decrypt"));
 
@@ -118,9 +130,12 @@ procedure Bench_Prepared is
    type Result_Table is array (Impl, Lengths'Range) of Sample_Array;
 
    --  Iterations per sample: about 16 MiB of payload, at least 20_000
-   --  records, so every sample runs for milliseconds.
+   --  records, so every sample runs for milliseconds. The portable tier
+   --  is some 1000 times slower; it gets 1/64 of that.
+   Slow : Boolean := False;
    function Count_For (Len : N32) return Positive is
-     (Positive'Max (20_000, Positive (16 * 1024 * 1024 / Len)));
+     (if Slow then Positive'Max (300, Positive (256 * 1024 / Len))
+      else Positive'Max (20_000, Positive (16 * 1024 * 1024 / Len)));
 
    procedure Fail (What : String) is
    begin
@@ -174,6 +189,7 @@ procedure Bench_Prepared is
    begin
       Put_Line ("AESNI=" & SPARKTLSCrypto.AES_NI.Has_AESNI'Image &
                 " PCLMULQDQ=" & SPARKTLSCrypto.GHASH_NI.Has_PCLMULQDQ'Image &
+                " VAES256=" & SPARKTLSCrypto.AES_GCM_AVX2.Has_VAES_AVX2'Image &
                 " AVX512=" &
                 SPARKTLSCrypto.AES_GCM_AVX512.Has_AVX512_AES_GCM'Image);
       Put_Line ("sample,bits,length,impl,ns_per_record");
@@ -243,6 +259,20 @@ procedure Bench_Prepared is
                                  if not Valid then Fail ("stc decrypt"); end if;
                                  Sink := Sink xor Buf (0);
                               end loop;
+                           when STC_Decrypt_Prepared =>
+                              for J in 1 .. Count loop
+                                 Buf := CT;
+                                 Decrypt_Prepared (Buf, Valid, CT_Tag,
+                                                   Fixed_Nonce, Context, AAD);
+                                 if not Valid then Fail ("stc prepared"); end if;
+                                 Sink := Sink xor Buf (0);
+                              end loop;
+                           when Copy_Only =>
+                              for J in 1 .. Count loop
+                                 Buf := CT;
+                                 Copy_Barrier (Buf'Address);
+                                 Sink := Sink xor Buf (0);
+                              end loop;
                            when OSSL_Encrypt =>
                               for J in 1 .. Count loop
                                  Nonce (0) := Byte (J mod 256);
@@ -296,7 +326,34 @@ procedure Bench_Prepared is
    Which : constant String :=
      (if Ada.Command_Line.Argument_Count > 0
       then Ada.Command_Line.Argument (1) else "all");
+   Tier : constant String :=
+     (if Ada.Command_Line.Argument_Count > 1
+      then Ada.Command_Line.Argument (2) else "");
 begin
+   if Tier /= "" then
+      declare
+         use SPARKTLSCrypto;
+         Ok : constant Boolean :=
+           (if Tier = "portable" then True
+            elsif Tier = "aes-ni" then AES_NI.Has_AESNI
+            elsif Tier = "vaes-256" then AES_GCM_AVX2.Has_VAES_AVX2
+            elsif Tier = "vaes-512" then AES_GCM_AVX512.Has_AVX512_AES_GCM
+            else False);
+      begin
+         if not Ok then
+            Fail ("tier " & Tier & " unknown or absent on this CPU");
+         end if;
+         AES_NI.Has_AESNI := AES_NI.Has_AESNI and Tier /= "portable";
+         GHASH_NI.Has_PCLMULQDQ :=
+           GHASH_NI.Has_PCLMULQDQ and Tier /= "portable";
+         AES_GCM_AVX2.Has_VAES_AVX2 :=
+           AES_GCM_AVX2.Has_VAES_AVX2 and Tier = "vaes-256";
+         AES_GCM_AVX512.Has_AVX512_AES_GCM :=
+           AES_GCM_AVX512.Has_AVX512_AES_GCM and Tier = "vaes-512";
+         Slow := Tier = "portable";
+         Put_Line ("tier: " & Tier);
+      end;
+   end if;
    if Which = "all" or Which = "prepared" then
       Prepared_Section;
    end if;

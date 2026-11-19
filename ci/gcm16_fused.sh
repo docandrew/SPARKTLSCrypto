@@ -7,6 +7,7 @@ SPARKTLSCRYPTO_BUILD_MODE=optimize \
 SPARKTLSCRYPTO_RUNTIME_CHECKS=enabled \
 SPARKTLSCRYPTO_CONTRACTS=enabled \
     alr -n --no-tty exec -- gprbuild -f -s -P tests/gcm16_fused/gcm16_fused.gpr \
-        test_fused.adb -j"${JOBS:-8}"
+        test_fused.adb test_stripes.adb -j"${JOBS:-8}"
 tests/gcm16_fused/bin/test_fused
+tests/gcm16_fused/bin/test_stripes
 alr -n --no-tty build -- -f -s

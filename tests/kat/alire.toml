@@ -1,6 +1,6 @@
 name = "sparktlscrypto_kat"
 version = "0.0.0"
-description = "NIST CAVP known-answer tests for SPARKTLSCrypto (HMAC_DRBG)"
+description = "CAVP and Wycheproof KATs for SPARKTLSCrypto (HMAC_DRBG, AES-GCM)"
 project-files = ["kat.gpr"]
 
 [[depends-on]]

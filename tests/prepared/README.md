@@ -9,6 +9,14 @@ headers and libcrypto are required for the independent oracle.
   existing one-shot encryptor for AES-128 and AES-256. It covers every length
   from 1 through 1025, TLS record tails, empty and partial AAD, multiple keys,
   nonzero array bounds, 32 buffer alignments with canaries, decrypt round trips, bad tags, and context erasure.
+- `bin/test_decrypt` checks `Decrypt_Prepared`, `Decrypt_InPlace(_256)` and
+  the one-shot `Decrypt(_256)` against OpenSSL EVP on every AES-GCM tier the
+  CPU has, switching tiers in one process by overwriting the CPUID flags
+  (test-only): every ciphertext length 0 .. 300 and AAD length 0 .. 300,
+  lengths around the 16/64/256/512-byte stripes up to 64 KiB, 64 buffer
+  alignments with guard bytes, every single-bit flip of tag, ciphertext and
+  AAD, equal flips at two tag positions, wrong nonce and key (all must fail
+  with the buffer zeroed), and `Encrypt_Prepared` on every tier.
 - `bin/bench_prepared` has two sections. `prepared` interleaves one-shot and
   cached encryption. `aead` times SPARKTLSCrypto encryption and decryption
   against OpenSSL EVP with a cached key schedule (the key is set once, each
@@ -16,8 +24,12 @@ headers and libcrypto are required for the independent oracle.
   16 KiB, rotating the order of the rows every sample, and prints a summary
   per row: median, interquartile range and extremes in ns per record, and
   MB/s at the median and quartiles. Decrypt rows always open an authentic
-  record. Sample zero is warmup; the following 20 observations are retained
-  for each key/record size. With no argument both sections run. Pin the
+  record; `stc.decrypt_prepared+copy` copies the ciphertext into the buffer
+  before each in-place decryption, and the `copy` row times that copy alone.
+  Sample zero is warmup; the following 20 observations are retained
+  for each key/record size. With no argument both sections run; a second
+  argument (`portable`, `aes-ni`, `vaes-256`, `vaes-512`) restricts the
+  library to one AES-GCM tier, as `test_decrypt` does. Pin the
   process to one core (`taskset -c N`) and quote the machine with numbers.
 - `bin/timing_prepared` randomizes two key classes, uses serialized cycle
   timestamps and the same memory addresses, and reports raw and 99%-trimmed

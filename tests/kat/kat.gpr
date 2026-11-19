@@ -5,7 +5,7 @@ project KAT is
    for Object_Dir use "obj";
    for Exec_Dir use "bin";
    for Source_Dirs use (".");
-   for Main use ("kat_hmac_drbg.adb");
+   for Main use ("kat_hmac_drbg.adb", "kat_aes_gcm.adb");
 
    package Compiler is
       for Default_Switches ("Ada") use ("-O2", "-g", "-gnat2022", "-gnata", "-gnatwa");

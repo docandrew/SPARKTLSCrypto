@@ -93,3 +93,6 @@ int openssl_gcm_bench_open(void *ctx, const unsigned char *iv,
            EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, (void *)tag) == 1 &&
            EVP_DecryptFinal_ex(ctx, out + written, &n) == 1;
 }
+
+/* Opaque to the optimiser: the benchmark's copy-only row stays a copy. */
+void bench_barrier(void *p) { __asm__ volatile("" : : "r"(p) : "memory"); }

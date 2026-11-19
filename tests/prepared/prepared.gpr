@@ -5,7 +5,8 @@ project Prepared is
    for Exec_Dir use "bin";
    for Source_Dirs use (".");
    for Languages use ("Ada", "C");
-   for Main use ("test_prepared.adb", "bench_prepared.adb", "timing_prepared.adb");
+   for Main use ("test_prepared.adb", "test_decrypt.adb", "bench_prepared.adb",
+                 "timing_prepared.adb");
    package Compiler is
       for Default_Switches ("Ada") use ("-O3", "-g", "-gnat2022", "-gnata");
       for Default_Switches ("C") use ("-O2", "-g", "-Wall", "-Wextra", "-Werror");

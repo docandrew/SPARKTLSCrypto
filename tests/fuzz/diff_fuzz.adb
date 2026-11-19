@@ -27,6 +27,9 @@ with SPARKNaCl;         use SPARKNaCl;
 with SPARKNaCl.AES;
 
 with SPARKTLSCrypto.AES_NI;
+with SPARKTLSCrypto.AES_GCM;
+with SPARKTLSCrypto.AES_GCM_AVX2;
+with SPARKTLSCrypto.AES_GCM_AVX512;
 with SPARKTLSCrypto.BigNat64;       use SPARKTLSCrypto.BigNat64;
 with SPARKTLSCrypto.BigNat64_ADX;
 with SPARKTLSCrypto.CPU;
@@ -460,6 +463,108 @@ procedure Diff_Fuzz is
       end if;
    end Target_GHASH;
 
+   --  AES-GCM decryption on the CPU's fastest tier against the proven
+   --  portable path (the CPUID tier flags are switched off around the
+   --  second call; this test owns the process), both against the
+   --  pre-existing one-shot Encrypt as the source of records. Lengths
+   --  mix short records, stripe-sized ones and up to 64 KiB; a quarter
+   --  of the records are authentic, the rest carry one flipped bit in the
+   --  tag, ciphertext or AAD and must fail with the buffer zeroed.
+   Cnt_GCM, Cnt_GCM_Forged : Natural := 0;
+
+   procedure Target_GCM is
+      use SPARKTLSCrypto.AES_GCM;
+      Bits    : constant Positive := (if (Next and 1) = 0 then 128 else 256);
+      Shape   : constant Unsigned_64 := Next mod 8;
+      Len     : constant N32 :=
+        (case Shape is
+            when 0      => N32 (Next mod 65_537),
+            when 1 .. 2 => N32 (Next mod 2_049),
+            when others => N32 (Next mod 600));
+      AAD_Len : constant N32 := N32 (Next mod 301);
+      Forge   : constant Unsigned_64 := Next mod 4;
+      Key     : Bytes_32;
+      Nonce   : Bytes_12;
+      AAD     : Byte_Seq (0 .. I32 (AAD_Len) - 1);
+      M, C, Fast, Slow : Byte_Seq (0 .. I32 (Len) - 1);
+      Tag     : Bytes_16;
+      Fast_OK, Slow_OK : Boolean;
+      Context : Prepared_Key;
+
+      procedure Flip (X : in out Byte_Seq) is
+         Bit : constant Unsigned_64 := Next mod Unsigned_64 (8 * X'Length);
+      begin
+         X (X'First + N32 (Bit / 8)) :=
+           X (X'First + N32 (Bit / 8)) xor Shift_Left (1, Natural (Bit mod 8));
+      end Flip;
+
+      procedure Prepare is
+      begin
+         if Bits = 128 then
+            Prepare_128 (Context, SPARKNaCl.AES.Construct (Key (0 .. 15)));
+         else
+            Prepare_256 (Context, SPARKNaCl.AES.Construct (Key));
+         end if;
+      end Prepare;
+
+      Saved_AESNI  : constant Boolean := SPARKTLSCrypto.AES_NI.Has_AESNI;
+      Saved_PCLMUL : constant Boolean := SPARKTLSCrypto.GHASH_NI.Has_PCLMULQDQ;
+      Saved_VAES2  : constant Boolean :=
+        SPARKTLSCrypto.AES_GCM_AVX2.Has_VAES_AVX2;
+      Saved_VAES5  : constant Boolean :=
+        SPARKTLSCrypto.AES_GCM_AVX512.Has_AVX512_AES_GCM;
+   begin
+      for I in Key'Range loop Key (I) := Byte (Limb and 255); end loop;
+      for I in Nonce'Range loop Nonce (I) := Byte (Limb and 255); end loop;
+      for I in AAD'Range loop AAD (I) := Byte (Next and 255); end loop;
+      for I in M'Range loop M (I) := Byte (Next and 255); end loop;
+      if Bits = 128 then
+         Encrypt (C, Tag, M, Nonce, SPARKNaCl.AES.Construct (Key (0 .. 15)),
+                  AAD);
+      else
+         Encrypt_256 (C, Tag, M, Nonce, SPARKNaCl.AES.Construct (Key), AAD);
+      end if;
+      case Forge is
+         when 1 => Flip (Tag);
+         when 2 => if Len > 0 then Flip (C); else Flip (Tag); end if;
+         when 3 => if AAD_Len > 0 then Flip (AAD); else Flip (Tag); end if;
+         when others => null;
+      end case;
+
+      Fast := C;
+      Prepare;
+      Decrypt_Prepared (Fast, Fast_OK, Tag, Nonce, Context, AAD);
+
+      SPARKTLSCrypto.AES_NI.Has_AESNI := False;
+      SPARKTLSCrypto.GHASH_NI.Has_PCLMULQDQ := False;
+      SPARKTLSCrypto.AES_GCM_AVX2.Has_VAES_AVX2 := False;
+      SPARKTLSCrypto.AES_GCM_AVX512.Has_AVX512_AES_GCM := False;
+      Slow := C;
+      Prepare;
+      Decrypt_Prepared (Slow, Slow_OK, Tag, Nonce, Context, AAD);
+      SPARKTLSCrypto.AES_NI.Has_AESNI := Saved_AESNI;
+      SPARKTLSCrypto.GHASH_NI.Has_PCLMULQDQ := Saved_PCLMUL;
+      SPARKTLSCrypto.AES_GCM_AVX2.Has_VAES_AVX2 := Saved_VAES2;
+      SPARKTLSCrypto.AES_GCM_AVX512.Has_AVX512_AES_GCM := Saved_VAES5;
+      Clear (Context);
+
+      if Fast_OK /= Slow_OK or else Fast /= Slow then
+         Fail ("AES-GCM decrypt: tier differs from portable, len" &
+               Len'Image & " aad" & AAD_Len'Image & " forge" & Forge'Image);
+      elsif Forge = 0 and then not (Fast_OK and then Fast = M) then
+         Fail ("AES-GCM decrypt: authentic record rejected, len" & Len'Image);
+      elsif Forge /= 0 and then
+        (Fast_OK or else (for some B of Fast => B /= 0))
+      then
+         Fail ("AES-GCM decrypt: forgery accepted or not zeroed, len" &
+               Len'Image);
+      end if;
+      Cnt_GCM := Cnt_GCM + 1;
+      if Forge /= 0 then
+         Cnt_GCM_Forged := Cnt_GCM_Forged + 1;
+      end if;
+   end Target_GCM;
+
    --  BigNat64.Modpow (the RSA public-modulus exponentiation, fixed 4-bit
    --  windows) against HACL*'s verified constant-time mod_exp, random odd
    --  modulus with its top bit set, random exponent of the full width.
@@ -526,7 +631,10 @@ begin
    Put_Line ("  bmi2/adx:" & SPARKTLSCrypto.CPU.Has_BMI2_ADX'Image
              & "  avx2:" & SPARKTLSCrypto.CPU.Has_AVX2'Image
              & "  aes-ni:" & SPARKTLSCrypto.AES_NI.Has_AESNI'Image
-             & "  pclmulqdq:" & SPARKTLSCrypto.GHASH_NI.Has_PCLMULQDQ'Image);
+             & "  pclmulqdq:" & SPARKTLSCrypto.GHASH_NI.Has_PCLMULQDQ'Image
+             & "  vaes-256:" & SPARKTLSCrypto.AES_GCM_AVX2.Has_VAES_AVX2'Image
+             & "  vaes-512:"
+             & SPARKTLSCrypto.AES_GCM_AVX512.Has_AVX512_AES_GCM'Image);
 
    while Clock - Start < Budget and then Failures = 0 loop
       --  A modular exponentiation is ~1300 multiplies; one every 128
@@ -535,12 +643,13 @@ begin
       if Round mod 128 = 127 then
          Target_ModExp;
       end if;
-      case Round mod 6 is
+      case Round mod 7 is
          when 0 => Target_Monty;
          when 1 => Target_Mont_Mul_4;
          when 2 => Target_P256_Field;
          when 3 => Target_Gather;
          when 4 => Target_AES;
+         when 5 => Target_GCM;
          when others => Target_GHASH;
       end case;
       Round := Round + 1;
@@ -551,7 +660,9 @@ begin
              & "  mont_mul_4" & Cnt_M4'Image & "  p256 mul/sqr" & Cnt_P256'Image
              & " fiat-c" & Cnt_Fiat_C'Image
              & "  gather" & Cnt_Gather'Image & "  aes" & Cnt_AES'Image
-             & "  ghash" & Cnt_GHASH'Image);
+             & "  ghash" & Cnt_GHASH'Image
+             & "  aes-gcm decrypt" & Cnt_GCM'Image
+             & " (forged" & Cnt_GCM_Forged'Image & ")");
    if Failures = 0 then
       Put_Line ("=== differential fuzz: PASS (" & Round'Image & " iterations) ===");
    else
