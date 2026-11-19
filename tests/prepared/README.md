@@ -9,8 +9,16 @@ headers and libcrypto are required for the independent oracle.
   existing one-shot encryptor for AES-128 and AES-256. It covers every length
   from 1 through 1025, TLS record tails, empty and partial AAD, multiple keys,
   nonzero array bounds, 32 buffer alignments with canaries, decrypt round trips, bad tags, and context erasure.
-- `bin/bench_prepared` interleaves one-shot and cached encryption. Sample zero
-  is warmup; retain the following 20 observations for each key/record size.
+- `bin/bench_prepared` has two sections. `prepared` interleaves one-shot and
+  cached encryption. `aead` times SPARKTLSCrypto encryption and decryption
+  against OpenSSL EVP with a cached key schedule (the key is set once, each
+  record installs only a nonce) for AES-128/256-GCM at 64 B, 1 KiB and
+  16 KiB, rotating the order of the rows every sample, and prints a summary
+  per row: median, interquartile range and extremes in ns per record, and
+  MB/s at the median and quartiles. Decrypt rows always open an authentic
+  record. Sample zero is warmup; the following 20 observations are retained
+  for each key/record size. With no argument both sections run. Pin the
+  process to one core (`taskset -c N`) and quote the machine with numbers.
 - `bin/timing_prepared` randomizes two key classes, uses serialized cycle
   timestamps and the same memory addresses, and reports raw and 99%-trimmed
   Welch statistics. It fails at |t| >= 4.5. Its deliberate timing-leak control
