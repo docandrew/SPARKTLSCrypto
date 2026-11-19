@@ -1731,6 +1731,512 @@ is
         Volatile => True);
    end Build_Ctr_Block_4;
 
+   ----------------------------------------------------------------------------
+   --  Stitched 4-block decryption (generated; see the specification)
+   ----------------------------------------------------------------------------
+
+   --  BEGIN GENERATED aes_ni constants
+   --  Constants of the generated kernels. Gen_Bswap_Mask reverses each
+   --  16-byte lane (NIST GHASH <-> PCLMULQDQ order); Gen_Reverse_Ctr_Mask
+   --  reverses only the big-endian counter word of each lane so PADDD can
+   --  add to it; entry k of Gen_Ctr_Steps adds k to that word (inc32 mod
+   --  2**32, as Increment_Counter); Gen_Reduction_Poly is the upper half
+   --  of the reflected reduction polynomial, 0xC2 << 56.
+   Gen_Bswap_Mask : constant array (0 .. 15) of Unsigned_8 :=
+     (15,14,13,12, 11,10,9,8, 7,6,5,4, 3,2,1,0);
+   for Gen_Bswap_Mask'Alignment use 16;
+   Gen_Reverse_Ctr_Mask : constant array (0 .. 15) of Unsigned_8 :=
+     (0,1,2,3, 4,5,6,7, 8,9,10,11, 15,14,13,12);
+   for Gen_Reverse_Ctr_Mask'Alignment use 16;
+   Gen_Ctr_Steps : constant array (0 .. 79) of Unsigned_8 :=
+     (0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0,
+      0,0,0,0, 0,0,0,0, 0,0,0,0, 1,0,0,0,
+      0,0,0,0, 0,0,0,0, 0,0,0,0, 2,0,0,0,
+      0,0,0,0, 0,0,0,0, 0,0,0,0, 3,0,0,0,
+      0,0,0,0, 0,0,0,0, 0,0,0,0, 4,0,0,0);
+   for Gen_Ctr_Steps'Alignment use 64;
+   Gen_Reduction_Poly : constant array (0 .. 15) of Unsigned_8 :=
+     (0 .. 14 => 0, 15 => 16#C2#);
+   for Gen_Reduction_Poly'Alignment use 16;
+   --  END GENERATED aes_ni constants
+
+   --  BEGIN GENERATED aes_ni decrypt 128
+   --  Decrypt one stripe in place: GHASH the ciphertext into S,
+   --  interleaved with AES-CTR from CB; CB advances by the stripe.
+   procedure Decrypt_GCM_Stripe_4_128
+     (Buf      : in out Byte_Seq;
+      S        : in out Bytes_16;
+      CB       : in out Bytes_16;
+      Pre_RK   : in     Pre_Swapped_RKs_128;
+      H_Powers : in     Pre_H_Powers)
+   is
+   begin
+      Asm
+       ("movdqu (%0), %%xmm11" & ASCII.LF & ASCII.HT &
+        "movdqa (%6), %%xmm12" & ASCII.LF & ASCII.HT &
+        "pshufb %%xmm12, %%xmm11" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm11, %%xmm0" & ASCII.LF & ASCII.HT &
+        "paddd (%7), %%xmm0" & ASCII.LF & ASCII.HT &
+        "pshufb %%xmm12, %%xmm0" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm11, %%xmm1" & ASCII.LF & ASCII.HT &
+        "paddd 16(%7), %%xmm1" & ASCII.LF & ASCII.HT &
+        "pshufb %%xmm12, %%xmm1" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm11, %%xmm2" & ASCII.LF & ASCII.HT &
+        "paddd 32(%7), %%xmm2" & ASCII.LF & ASCII.HT &
+        "pshufb %%xmm12, %%xmm2" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm11, %%xmm3" & ASCII.LF & ASCII.HT &
+        "paddd 48(%7), %%xmm3" & ASCII.LF & ASCII.HT &
+        "pshufb %%xmm12, %%xmm3" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm11, %%xmm13" & ASCII.LF & ASCII.HT &
+        "paddd 64(%7), %%xmm13" & ASCII.LF & ASCII.HT &
+        "pshufb %%xmm12, %%xmm13" & ASCII.LF & ASCII.HT &
+        "movdqu %%xmm13, (%0)" & ASCII.LF & ASCII.HT &
+        "movdqu (%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "movdqu 16(%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "movdqa (%5), %%xmm15" & ASCII.LF & ASCII.HT &
+        "movdqu (%2), %%xmm8" & ASCII.LF & ASCII.HT &
+        "pshufb %%xmm15, %%xmm8" & ASCII.LF & ASCII.HT &
+        "movdqu (%3), %%xmm10" & ASCII.LF & ASCII.HT &
+        "pshufb %%xmm15, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm8" & ASCII.LF & ASCII.HT &
+        "movdqu (%4), %%xmm9" & ASCII.LF & ASCII.HT &
+        "movdqu 32(%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm8, %%xmm5" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x00, %%xmm9, %%xmm5" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm8, %%xmm6" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x11, %%xmm9, %%xmm6" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm8, %%xmm7" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x10, %%xmm9, %%xmm7" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x01, %%xmm9, %%xmm8" & ASCII.LF & ASCII.HT &
+        "movdqu 48(%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm8, %%xmm7" & ASCII.LF & ASCII.HT &
+        "movdqu 16(%2), %%xmm8" & ASCII.LF & ASCII.HT &
+        "pshufb %%xmm15, %%xmm8" & ASCII.LF & ASCII.HT &
+        "movdqu 16(%4), %%xmm9" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm8, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x00, %%xmm9, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm5" & ASCII.LF & ASCII.HT &
+        "movdqu 64(%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm8, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x11, %%xmm9, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm6" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm8, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x10, %%xmm9, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm7" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x01, %%xmm9, %%xmm8" & ASCII.LF & ASCII.HT &
+        "movdqu 80(%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm8, %%xmm7" & ASCII.LF & ASCII.HT &
+        "movdqu 32(%2), %%xmm8" & ASCII.LF & ASCII.HT &
+        "pshufb %%xmm15, %%xmm8" & ASCII.LF & ASCII.HT &
+        "movdqu 32(%4), %%xmm9" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm8, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x00, %%xmm9, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm5" & ASCII.LF & ASCII.HT &
+        "movdqu 96(%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm8, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x11, %%xmm9, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm6" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm8, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x10, %%xmm9, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm7" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x01, %%xmm9, %%xmm8" & ASCII.LF & ASCII.HT &
+        "movdqu 112(%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm8, %%xmm7" & ASCII.LF & ASCII.HT &
+        "movdqu 48(%2), %%xmm8" & ASCII.LF & ASCII.HT &
+        "pshufb %%xmm15, %%xmm8" & ASCII.LF & ASCII.HT &
+        "movdqu 48(%4), %%xmm9" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm8, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x00, %%xmm9, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm5" & ASCII.LF & ASCII.HT &
+        "movdqu 128(%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm8, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x11, %%xmm9, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm6" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm8, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x10, %%xmm9, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm7" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x01, %%xmm9, %%xmm8" & ASCII.LF & ASCII.HT &
+        "movdqu 144(%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm8, %%xmm7" & ASCII.LF & ASCII.HT &
+        "movdqu 160(%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "aesenclast %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "aesenclast %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "aesenclast %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "aesenclast %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "movdqu (%2), %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm0" & ASCII.LF & ASCII.HT &
+        "movdqu %%xmm0, (%2)" & ASCII.LF & ASCII.HT &
+        "movdqu 16(%2), %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm1" & ASCII.LF & ASCII.HT &
+        "movdqu %%xmm1, 16(%2)" & ASCII.LF & ASCII.HT &
+        "movdqu 32(%2), %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm2" & ASCII.LF & ASCII.HT &
+        "movdqu %%xmm2, 32(%2)" & ASCII.LF & ASCII.HT &
+        "movdqu 48(%2), %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm3" & ASCII.LF & ASCII.HT &
+        "movdqu %%xmm3, 48(%2)" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm7, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pslldq $8, %%xmm10" & ASCII.LF & ASCII.HT &
+        "psrldq $8, %%xmm7" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm5" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm7, %%xmm6" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm5, %%xmm0" & ASCII.LF & ASCII.HT &
+        "psrld $31, %%xmm0" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm6, %%xmm1" & ASCII.LF & ASCII.HT &
+        "psrld $31, %%xmm1" & ASCII.LF & ASCII.HT &
+        "pslld $1, %%xmm5" & ASCII.LF & ASCII.HT &
+        "pslld $1, %%xmm6" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm0, %%xmm2" & ASCII.LF & ASCII.HT &
+        "psrldq $12, %%xmm2" & ASCII.LF & ASCII.HT &
+        "pslldq $4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "pslldq $4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "por %%xmm0, %%xmm5" & ASCII.LF & ASCII.HT &
+        "por %%xmm1, %%xmm6" & ASCII.LF & ASCII.HT &
+        "por %%xmm2, %%xmm6" & ASCII.LF & ASCII.HT &
+        "movdqa (%8), %%xmm3" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm5, %%xmm0" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x10, %%xmm3, %%xmm0" & ASCII.LF & ASCII.HT &
+        "pshufd $0x4e, %%xmm5, %%xmm5" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm0, %%xmm5" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm5, %%xmm0" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x10, %%xmm3, %%xmm0" & ASCII.LF & ASCII.HT &
+        "pshufd $0x4e, %%xmm5, %%xmm5" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm0, %%xmm5" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm5, %%xmm6" & ASCII.LF & ASCII.HT &
+        "pshufb %%xmm15, %%xmm6" & ASCII.LF & ASCII.HT &
+        "movdqu %%xmm6, (%3)",
+        Inputs => (System.Address'Asm_Input ("r", CB'Address),
+                   System.Address'Asm_Input ("r", Pre_RK'Address),
+                   System.Address'Asm_Input ("r", Buf'Address),
+                   System.Address'Asm_Input ("r", S'Address),
+                   System.Address'Asm_Input ("r", H_Powers'Address),
+                   System.Address'Asm_Input ("r", Gen_Bswap_Mask'Address),
+                   System.Address'Asm_Input ("r", Gen_Reverse_Ctr_Mask'Address),
+                   System.Address'Asm_Input ("r", Gen_Ctr_Steps'Address),
+                   System.Address'Asm_Input ("r", Gen_Reduction_Poly'Address)),
+        Clobber => "xmm0,xmm1,xmm2,xmm3,xmm4,xmm5,xmm6,xmm7,xmm8,xmm9,xmm10,xmm11,xmm12,xmm13,xmm15,memory",
+        Volatile => True);
+   end Decrypt_GCM_Stripe_4_128;
+   --  END GENERATED aes_ni decrypt 128
+
+   --  BEGIN GENERATED aes_ni decrypt 256
+   --  Decrypt one stripe in place: GHASH the ciphertext into S,
+   --  interleaved with AES-CTR from CB; CB advances by the stripe.
+   procedure Decrypt_GCM_Stripe_4_256
+     (Buf      : in out Byte_Seq;
+      S        : in out Bytes_16;
+      CB       : in out Bytes_16;
+      Pre_RK   : in     Pre_Swapped_RKs_256;
+      H_Powers : in     Pre_H_Powers)
+   is
+   begin
+      Asm
+       ("movdqu (%0), %%xmm11" & ASCII.LF & ASCII.HT &
+        "movdqa (%6), %%xmm12" & ASCII.LF & ASCII.HT &
+        "pshufb %%xmm12, %%xmm11" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm11, %%xmm0" & ASCII.LF & ASCII.HT &
+        "paddd (%7), %%xmm0" & ASCII.LF & ASCII.HT &
+        "pshufb %%xmm12, %%xmm0" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm11, %%xmm1" & ASCII.LF & ASCII.HT &
+        "paddd 16(%7), %%xmm1" & ASCII.LF & ASCII.HT &
+        "pshufb %%xmm12, %%xmm1" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm11, %%xmm2" & ASCII.LF & ASCII.HT &
+        "paddd 32(%7), %%xmm2" & ASCII.LF & ASCII.HT &
+        "pshufb %%xmm12, %%xmm2" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm11, %%xmm3" & ASCII.LF & ASCII.HT &
+        "paddd 48(%7), %%xmm3" & ASCII.LF & ASCII.HT &
+        "pshufb %%xmm12, %%xmm3" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm11, %%xmm13" & ASCII.LF & ASCII.HT &
+        "paddd 64(%7), %%xmm13" & ASCII.LF & ASCII.HT &
+        "pshufb %%xmm12, %%xmm13" & ASCII.LF & ASCII.HT &
+        "movdqu %%xmm13, (%0)" & ASCII.LF & ASCII.HT &
+        "movdqu (%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "movdqu 16(%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "movdqa (%5), %%xmm15" & ASCII.LF & ASCII.HT &
+        "movdqu (%2), %%xmm8" & ASCII.LF & ASCII.HT &
+        "pshufb %%xmm15, %%xmm8" & ASCII.LF & ASCII.HT &
+        "movdqu (%3), %%xmm10" & ASCII.LF & ASCII.HT &
+        "pshufb %%xmm15, %%xmm10" & ASCII.LF & ASCII.HT &
+        "movdqu 32(%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm8" & ASCII.LF & ASCII.HT &
+        "movdqu (%4), %%xmm9" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm8, %%xmm5" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x00, %%xmm9, %%xmm5" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm8, %%xmm6" & ASCII.LF & ASCII.HT &
+        "movdqu 48(%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x11, %%xmm9, %%xmm6" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm8, %%xmm7" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x10, %%xmm9, %%xmm7" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x01, %%xmm9, %%xmm8" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm8, %%xmm7" & ASCII.LF & ASCII.HT &
+        "movdqu 64(%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "movdqu 16(%2), %%xmm8" & ASCII.LF & ASCII.HT &
+        "pshufb %%xmm15, %%xmm8" & ASCII.LF & ASCII.HT &
+        "movdqu 16(%4), %%xmm9" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm8, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x00, %%xmm9, %%xmm10" & ASCII.LF & ASCII.HT &
+        "movdqu 80(%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm5" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm8, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x11, %%xmm9, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm6" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm8, %%xmm10" & ASCII.LF & ASCII.HT &
+        "movdqu 96(%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x10, %%xmm9, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm7" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x01, %%xmm9, %%xmm8" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm8, %%xmm7" & ASCII.LF & ASCII.HT &
+        "movdqu 32(%2), %%xmm8" & ASCII.LF & ASCII.HT &
+        "movdqu 112(%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "pshufb %%xmm15, %%xmm8" & ASCII.LF & ASCII.HT &
+        "movdqu 32(%4), %%xmm9" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm8, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x00, %%xmm9, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm5" & ASCII.LF & ASCII.HT &
+        "movdqu 128(%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm8, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x11, %%xmm9, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm6" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm8, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x10, %%xmm9, %%xmm10" & ASCII.LF & ASCII.HT &
+        "movdqu 144(%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm7" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x01, %%xmm9, %%xmm8" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm8, %%xmm7" & ASCII.LF & ASCII.HT &
+        "movdqu 48(%2), %%xmm8" & ASCII.LF & ASCII.HT &
+        "pshufb %%xmm15, %%xmm8" & ASCII.LF & ASCII.HT &
+        "movdqu 160(%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "movdqu 48(%4), %%xmm9" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm8, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x00, %%xmm9, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm5" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm8, %%xmm10" & ASCII.LF & ASCII.HT &
+        "movdqu 176(%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x11, %%xmm9, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm6" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm8, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x10, %%xmm9, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm7" & ASCII.LF & ASCII.HT &
+        "movdqu 192(%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x01, %%xmm9, %%xmm8" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm8, %%xmm7" & ASCII.LF & ASCII.HT &
+        "movdqu 208(%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "aesenc %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "movdqu 224(%1), %%xmm4" & ASCII.LF & ASCII.HT &
+        "aesenclast %%xmm4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "aesenclast %%xmm4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "aesenclast %%xmm4, %%xmm2" & ASCII.LF & ASCII.HT &
+        "aesenclast %%xmm4, %%xmm3" & ASCII.LF & ASCII.HT &
+        "movdqu (%2), %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm0" & ASCII.LF & ASCII.HT &
+        "movdqu %%xmm0, (%2)" & ASCII.LF & ASCII.HT &
+        "movdqu 16(%2), %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm1" & ASCII.LF & ASCII.HT &
+        "movdqu %%xmm1, 16(%2)" & ASCII.LF & ASCII.HT &
+        "movdqu 32(%2), %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm2" & ASCII.LF & ASCII.HT &
+        "movdqu %%xmm2, 32(%2)" & ASCII.LF & ASCII.HT &
+        "movdqu 48(%2), %%xmm10" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm3" & ASCII.LF & ASCII.HT &
+        "movdqu %%xmm3, 48(%2)" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm7, %%xmm10" & ASCII.LF & ASCII.HT &
+        "pslldq $8, %%xmm10" & ASCII.LF & ASCII.HT &
+        "psrldq $8, %%xmm7" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm10, %%xmm5" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm7, %%xmm6" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm5, %%xmm0" & ASCII.LF & ASCII.HT &
+        "psrld $31, %%xmm0" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm6, %%xmm1" & ASCII.LF & ASCII.HT &
+        "psrld $31, %%xmm1" & ASCII.LF & ASCII.HT &
+        "pslld $1, %%xmm5" & ASCII.LF & ASCII.HT &
+        "pslld $1, %%xmm6" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm0, %%xmm2" & ASCII.LF & ASCII.HT &
+        "psrldq $12, %%xmm2" & ASCII.LF & ASCII.HT &
+        "pslldq $4, %%xmm0" & ASCII.LF & ASCII.HT &
+        "pslldq $4, %%xmm1" & ASCII.LF & ASCII.HT &
+        "por %%xmm0, %%xmm5" & ASCII.LF & ASCII.HT &
+        "por %%xmm1, %%xmm6" & ASCII.LF & ASCII.HT &
+        "por %%xmm2, %%xmm6" & ASCII.LF & ASCII.HT &
+        "movdqa (%8), %%xmm3" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm5, %%xmm0" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x10, %%xmm3, %%xmm0" & ASCII.LF & ASCII.HT &
+        "pshufd $0x4e, %%xmm5, %%xmm5" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm0, %%xmm5" & ASCII.LF & ASCII.HT &
+        "movdqa %%xmm5, %%xmm0" & ASCII.LF & ASCII.HT &
+        "pclmulqdq $0x10, %%xmm3, %%xmm0" & ASCII.LF & ASCII.HT &
+        "pshufd $0x4e, %%xmm5, %%xmm5" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm0, %%xmm5" & ASCII.LF & ASCII.HT &
+        "pxor %%xmm5, %%xmm6" & ASCII.LF & ASCII.HT &
+        "pshufb %%xmm15, %%xmm6" & ASCII.LF & ASCII.HT &
+        "movdqu %%xmm6, (%3)",
+        Inputs => (System.Address'Asm_Input ("r", CB'Address),
+                   System.Address'Asm_Input ("r", Pre_RK'Address),
+                   System.Address'Asm_Input ("r", Buf'Address),
+                   System.Address'Asm_Input ("r", S'Address),
+                   System.Address'Asm_Input ("r", H_Powers'Address),
+                   System.Address'Asm_Input ("r", Gen_Bswap_Mask'Address),
+                   System.Address'Asm_Input ("r", Gen_Reverse_Ctr_Mask'Address),
+                   System.Address'Asm_Input ("r", Gen_Ctr_Steps'Address),
+                   System.Address'Asm_Input ("r", Gen_Reduction_Poly'Address)),
+        Clobber => "xmm0,xmm1,xmm2,xmm3,xmm4,xmm5,xmm6,xmm7,xmm8,xmm9,xmm10,xmm11,xmm12,xmm13,xmm15,memory",
+        Volatile => True);
+   end Decrypt_GCM_Stripe_4_256;
+   --  END GENERATED aes_ni decrypt 256
+
+   ----------------------------------------------------------------------------
+   --  Branch-free masking
+   ----------------------------------------------------------------------------
+   --  rdi walks Buf, rcx counts the bytes left. The loop conditions use
+   --  only Buf'Length; Mask is replicated into xmm0 (16 bytes) and al.
+
+   procedure Mask_Bytes (Buf : in out Byte_Seq; Mask : in Byte) is
+      Mask_16 : constant Bytes_16 := (others => Mask);
+   begin
+      if Buf'Length = 0 then
+         return;
+      end if;
+      Asm
+       ("mov     %0, %%rdi"                & ASCII.LF & ASCII.HT &
+        "mov     %1, %%rcx"                & ASCII.LF & ASCII.HT &
+        "movdqu  (%2), %%xmm0"             & ASCII.LF & ASCII.HT &
+        "movzbl  (%2), %%eax"              & ASCII.LF & ASCII.HT &
+        "1:"                               & ASCII.LF & ASCII.HT &
+        "cmp     $64, %%rcx"               & ASCII.LF & ASCII.HT &
+        "jb      2f"                       & ASCII.LF & ASCII.HT &
+        "movdqu    (%%rdi), %%xmm1"        & ASCII.LF & ASCII.HT &
+        "movdqu  16(%%rdi), %%xmm2"        & ASCII.LF & ASCII.HT &
+        "movdqu  32(%%rdi), %%xmm3"        & ASCII.LF & ASCII.HT &
+        "movdqu  48(%%rdi), %%xmm4"        & ASCII.LF & ASCII.HT &
+        "pand    %%xmm0, %%xmm1"           & ASCII.LF & ASCII.HT &
+        "pand    %%xmm0, %%xmm2"           & ASCII.LF & ASCII.HT &
+        "pand    %%xmm0, %%xmm3"           & ASCII.LF & ASCII.HT &
+        "pand    %%xmm0, %%xmm4"           & ASCII.LF & ASCII.HT &
+        "movdqu  %%xmm1,   (%%rdi)"        & ASCII.LF & ASCII.HT &
+        "movdqu  %%xmm2, 16(%%rdi)"        & ASCII.LF & ASCII.HT &
+        "movdqu  %%xmm3, 32(%%rdi)"        & ASCII.LF & ASCII.HT &
+        "movdqu  %%xmm4, 48(%%rdi)"        & ASCII.LF & ASCII.HT &
+        "add     $64, %%rdi"               & ASCII.LF & ASCII.HT &
+        "sub     $64, %%rcx"               & ASCII.LF & ASCII.HT &
+        "jmp     1b"                       & ASCII.LF & ASCII.HT &
+        "2:"                               & ASCII.LF & ASCII.HT &
+        "cmp     $16, %%rcx"               & ASCII.LF & ASCII.HT &
+        "jb      3f"                       & ASCII.LF & ASCII.HT &
+        "movdqu  (%%rdi), %%xmm1"          & ASCII.LF & ASCII.HT &
+        "pand    %%xmm0, %%xmm1"           & ASCII.LF & ASCII.HT &
+        "movdqu  %%xmm1, (%%rdi)"          & ASCII.LF & ASCII.HT &
+        "add     $16, %%rdi"               & ASCII.LF & ASCII.HT &
+        "sub     $16, %%rcx"               & ASCII.LF & ASCII.HT &
+        "jmp     2b"                       & ASCII.LF & ASCII.HT &
+        "3:"                               & ASCII.LF & ASCII.HT &
+        "test    %%rcx, %%rcx"             & ASCII.LF & ASCII.HT &
+        "jz      4f"                       & ASCII.LF & ASCII.HT &
+        "andb    %%al, (%%rdi)"            & ASCII.LF & ASCII.HT &
+        "inc     %%rdi"                    & ASCII.LF & ASCII.HT &
+        "dec     %%rcx"                    & ASCII.LF & ASCII.HT &
+        "jmp     3b"                       & ASCII.LF & ASCII.HT &
+        "4:",
+        Inputs => (System.Address'Asm_Input ("r", Buf'Address),
+                   Unsigned_64'Asm_Input ("r", Unsigned_64 (Buf'Length)),
+                   System.Address'Asm_Input ("r", Mask_16'Address)),
+        Clobber => "rax,rcx,rdi,xmm0,xmm1,xmm2,xmm3,xmm4,memory,cc",
+        Volatile => True);
+   end Mask_Bytes;
+
 begin
    Has_AESNI := (not SPARKTLSCrypto.CPU.Portable_Only) and then Detect_AES_NI;
 end SPARKTLSCrypto.AES_NI;

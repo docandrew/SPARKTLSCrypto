@@ -2,6 +2,7 @@ with Interfaces; use Interfaces;
 with SPARKTLSCrypto.AES_Dispatch;
 with SPARKTLSCrypto.AES_NI;
 with SPARKTLSCrypto.AES_GCM_AVX512;
+with SPARKTLSCrypto.AES_GCM_AVX2;
 with SPARKTLSCrypto.GHASH_Dispatch;
 with SPARKTLSCrypto.GHASH_NI;
 
@@ -1025,13 +1026,33 @@ is
    end Verify_Empty_Ciphertext_256;
 
 
+   --  H^32 .. H^1, each byte-reversed, descending, 16 bytes apiece: the
+   --  table the VAES stripe kernels read (AES_GCM_AVX512.Pre_H_Powers_32;
+   --  its last 256 bytes are the sixteen-power Pre_H_Powers_16 table).
+   --  The loop runs a fixed 32 times, one multiply each; the last
+   --  product is unused.
+   procedure Compute_H_Powers_32 (H : in Bytes_16; Powers : out Byte_Seq)
+   with Pre => Powers'First = 0 and Powers'Last = 511
+   is
+      Power : Bytes_16 := H;
+   begin
+      Powers := (others => 0);
+      for K in reverse N32 range 0 .. 31 loop
+         for I in N32 range 0 .. 15 loop
+            Powers (16 * K + I) := Power (15 - I);
+         end loop;
+         Power := GF128_Mul (Power, H);
+      end loop;
+      SPARKNaCl.Sanitize (Byte_Seq (Power));
+   end Compute_H_Powers_32;
+
    procedure Clear (Context : out Prepared_Key) is
    begin
       SPARKNaCl.Sanitize (Byte_Seq (Context.Raw_Key));
       SPARKNaCl.Sanitize (Context.Rounds);
       SPARKNaCl.Sanitize (Byte_Seq (Context.H));
       SPARKNaCl.Sanitize (Context.Powers_4);
-      SPARKNaCl.Sanitize (Context.Powers_16);
+      SPARKNaCl.Sanitize (Context.Powers_32);
       Context.Ready := False;
       Context.Is_256 := False;
       Context.Hardware := False;
@@ -1054,9 +1075,10 @@ is
             AES.Sanitize (RK);
          end;
          GHASH_NI.Compute_H_Powers (Context.H, Context.Powers_4);
-         if AES_GCM_AVX512.Has_AVX512_AES_GCM then
-            AES_GCM_AVX512.Compute_H_Powers_16
-              (Context.H, Context.Powers_16);
+         if AES_GCM_AVX512.Has_AVX512_AES_GCM
+           or AES_GCM_AVX2.Has_VAES_AVX2
+         then
+            Compute_H_Powers_32 (Context.H, Context.Powers_32);
          end if;
       end if;
       Context.Ready := True;
@@ -1080,9 +1102,10 @@ is
             AES.Sanitize (RK);
          end;
          GHASH_NI.Compute_H_Powers (Context.H, Context.Powers_4);
-         if AES_GCM_AVX512.Has_AVX512_AES_GCM then
-            AES_GCM_AVX512.Compute_H_Powers_16
-              (Context.H, Context.Powers_16);
+         if AES_GCM_AVX512.Has_AVX512_AES_GCM
+           or AES_GCM_AVX2.Has_VAES_AVX2
+         then
+            Compute_H_Powers_32 (Context.H, Context.Powers_32);
          end if;
       end if;
       Context.Ready := True;
@@ -1181,11 +1204,11 @@ is
             if Context.Is_256 then
                AES_GCM_AVX512.Encrypt_GCM_Stripe_16_256
                  (Buf (Base + Pos .. Base + Pos + 255), S, Ctr_256,
-                  Context.Rounds, Context.Powers_16);
+                  Context.Rounds, Context.Powers_32 (256 .. 511));
             else
                AES_GCM_AVX512.Encrypt_GCM_Stripe_16_128
                  (Buf (Base + Pos .. Base + Pos + 255), S, Ctr_256,
-                  Context.Rounds (0 .. 175), Context.Powers_16);
+                  Context.Rounds (0 .. 175), Context.Powers_32 (256 .. 511));
             end if;
             Pos := Pos + 256;
          end loop;
@@ -1257,5 +1280,294 @@ is
       XOR_Block (Tag, EJ0);
       SPARKNaCl.Sanitize (Byte_Seq (Stream));
    end Encrypt_Prepared;
+
+   ----------------------------------------------------------------------------
+   --  Prepared decryption
+   ----------------------------------------------------------------------------
+   --  Both paths compute the expected tag over the ciphertext and decrypt
+   --  Buf in place; Decrypt_Prepared then compares the tags and masks the
+   --  whole buffer, the same way on every path and for every outcome.
+
+   --  16#FF# if A = B, else 0, with no branch or early exit: the byte
+   --  differences are OR-ed over all 16 positions, and D - 1 borrows into
+   --  bit 8 exactly when D = 0.
+   function Tag_Mask (A, B : Bytes_16) return Byte
+   with Post => (if A = B then Tag_Mask'Result = 16#FF#
+                 else Tag_Mask'Result = 0)
+   is
+      D : Byte := 0;
+   begin
+      for I in A'Range loop
+         D := D or (A (I) xor B (I));
+         pragma Loop_Invariant
+           ((D = 0) = (for all J in A'First .. I => A (J) = B (J)));
+      end loop;
+      pragma Assert ((D = 0) = (A = B));
+      return Byte (Shift_Right (Unsigned_32 (D) - 1, 8) and 16#FF#);
+   end Tag_Mask;
+
+   --  Portable counterpart of AES_NI.Mask_Bytes.
+   procedure Mask_Portable (Buf : in out Byte_Seq; Mask : in Byte)
+   with Pre  => Mask = 0 or Mask = 16#FF#,
+        Post => (if Mask = 0 then (for all I in Buf'Range => Buf (I) = 0))
+   is
+   begin
+      for I in Buf'Range loop
+         Buf (I) := Buf (I) and Mask;
+         pragma Loop_Invariant
+           (if Mask = 0 then (for all J in Buf'First .. I => Buf (J) = 0));
+      end loop;
+   end Mask_Portable;
+
+   --  GHASH of the length block len(A) || len(C), in bits, closing S.
+   procedure GHASH_Lengths
+     (S : in out Bytes_16; H : in Bytes_16; AAD_Len, C_Len : in N32)
+   is
+      A_Bits  : constant Unsigned_64 := Unsigned_64 (AAD_Len) * 8;
+      C_Bits  : constant Unsigned_64 := Unsigned_64 (C_Len) * 8;
+      Lengths : Bytes_16;
+   begin
+      for I in 0 .. 7 loop
+         Lengths (N32 (I)) :=
+           Byte (Shift_Right (A_Bits, (7 - I) * 8) and 16#FF#);
+         Lengths (N32 (8 + I)) :=
+           Byte (Shift_Right (C_Bits, (7 - I) * 8) and 16#FF#);
+      end loop;
+      XOR_Block (S, Lengths);
+      S := GF128_Mul (S, H);
+   end GHASH_Lengths;
+
+   --  The proven portable path: the one-shot building blocks (software AES
+   --  and GHASH when the CPU lacks AES-NI or PCLMULQDQ, or in a
+   --  SPARKTLSCRYPTO_ASM=disabled build), GHASH before CTR.
+   procedure Portable_Decrypt
+     (Buf      : in out Byte_Seq;
+      Computed :    out Bytes_16;
+      N        : in     Bytes_12;
+      Context  : in     Prepared_Key;
+      AAD      : in     Byte_Seq)
+   with Pre => AAD'First = 0 and Buf'Last < N32'Last and AAD'Last < N32'Last
+   is
+      J0  : Bytes_16 := (others => 0);
+      H   : Bytes_16;
+      EJ0 : Bytes_16;
+      S   : Bytes_16 := (others => 0);
+   begin
+      J0 (0 .. 11) := N;
+      J0 (15) := 16#01#;
+      if Context.Is_256 then
+         declare
+            K  : AES.AES256_Key := AES.Construct (Context.Raw_Key);
+            RK : AES.AES256_Round_Keys := AES.Key_Expansion (K);
+         begin
+            HW_AES.Cipher (H, Bytes_16'(others => 0), RK);
+            HW_AES.Cipher (EJ0, J0, RK);
+            if AAD'Length > 0 then
+               GHASH_Bytes (S, H, AAD);
+            end if;
+            if Buf'Length > 0 then
+               GHASH_Bytes (S, H, Buf);
+               Increment_Counter (J0);
+               AES_CTR_256_InPlace (Buf, RK, J0);
+            end if;
+            AES.Sanitize (RK);
+            AES.Sanitize (K);
+         end;
+      else
+         declare
+            K  : AES.AES128_Key := AES.Construct (Context.Raw_Key (0 .. 15));
+            RK : AES.AES128_Round_Keys := AES.Key_Expansion (K);
+         begin
+            HW_AES.Cipher (H, Bytes_16'(others => 0), RK);
+            HW_AES.Cipher (EJ0, J0, RK);
+            if AAD'Length > 0 then
+               GHASH_Bytes (S, H, AAD);
+            end if;
+            if Buf'Length > 0 then
+               GHASH_Bytes (S, H, Buf);
+               Increment_Counter (J0);
+               AES_CTR_128_InPlace (Buf, RK, J0);
+            end if;
+            AES.Sanitize (RK);
+            AES.Sanitize (K);
+         end;
+      end if;
+      GHASH_Lengths (S, H, N32 (AAD'Length), N32 (Buf'Length));
+      Computed := S;
+      XOR_Block (Computed, EJ0);
+      SPARKNaCl.Sanitize (Byte_Seq (H));
+   end Portable_Decrypt;
+
+   --  The accelerated path: stitched stripes of 16 blocks (VAES on zmm or
+   --  ymm), then 4 blocks (AES-NI), then single blocks. Every stripe
+   --  GHASHes its ciphertext before overwriting it, so the tag covers the
+   --  ciphertext as received.
+   procedure Hardware_Decrypt
+     (Buf      : in out Byte_Seq;
+      Computed :    out Bytes_16;
+      N        : in     Bytes_12;
+      Context  : in     Prepared_Key;
+      AAD      : in     Byte_Seq)
+   with Pre => Context.Ready and Context.Hardware
+               and AAD'First = 0 and Buf'Last < N32'Last
+               and AAD'Last < N32'Last
+   is
+      S      : Bytes_16 := (others => 0);
+      CB     : Bytes_16 := (others => 0);
+      EJ0    : Bytes_16;
+      Stream : Bytes_16 := (others => 0);
+      Block  : Bytes_16 := (others => 0);
+      Pos    : N32 := 0;
+      Count  : N32;
+      Len    : constant N32 := N32 (Buf'Length);
+      Base   : constant N32 := Buf'First;
+   begin
+      CB (0 .. 11) := N;
+      CB (15) := 1;
+      Prepared_Cipher (EJ0, CB, Context);
+      Increment_Counter (CB);
+      Prepared_GHASH (S, Context, AAD);
+
+      if AES_GCM_AVX512.Has_AVX512_AES_GCM then
+         while Len - Pos >= 512 loop
+            pragma Loop_Invariant (Pos <= Len);
+            if Context.Is_256 then
+               AES_GCM_AVX512.Decrypt_GCM_Stripe_32_256
+                 (Buf (Base + Pos .. Base + Pos + 511), S, CB,
+                  Context.Rounds, Context.Powers_32);
+            else
+               AES_GCM_AVX512.Decrypt_GCM_Stripe_32_128
+                 (Buf (Base + Pos .. Base + Pos + 511), S, CB,
+                  Context.Rounds (0 .. 175), Context.Powers_32);
+            end if;
+            Pos := Pos + 512;
+         end loop;
+         while Len - Pos >= 256 loop
+            pragma Loop_Invariant (Pos <= Len);
+            if Context.Is_256 then
+               AES_GCM_AVX512.Decrypt_GCM_Stripe_16_256
+                 (Buf (Base + Pos .. Base + Pos + 255), S, CB,
+                  Context.Rounds, Context.Powers_32 (256 .. 511));
+            else
+               AES_GCM_AVX512.Decrypt_GCM_Stripe_16_128
+                 (Buf (Base + Pos .. Base + Pos + 255), S, CB,
+                  Context.Rounds (0 .. 175), Context.Powers_32 (256 .. 511));
+            end if;
+            Pos := Pos + 256;
+         end loop;
+      elsif AES_GCM_AVX2.Has_VAES_AVX2 then
+         while Len - Pos >= 256 loop
+            pragma Loop_Invariant (Pos <= Len);
+            if Context.Is_256 then
+               AES_GCM_AVX2.Decrypt_GCM_Stripe_16_256
+                 (Buf (Base + Pos .. Base + Pos + 255), S, CB,
+                  Context.Rounds, Context.Powers_32 (256 .. 511));
+            else
+               AES_GCM_AVX2.Decrypt_GCM_Stripe_16_128
+                 (Buf (Base + Pos .. Base + Pos + 255), S, CB,
+                  Context.Rounds (0 .. 175), Context.Powers_32 (256 .. 511));
+            end if;
+            Pos := Pos + 256;
+         end loop;
+      end if;
+
+      while Len - Pos >= 64 loop
+         pragma Loop_Invariant (Pos <= Len);
+         if Context.Is_256 then
+            AES_NI.Decrypt_GCM_Stripe_4_256
+              (Buf (Base + Pos .. Base + Pos + 63), S, CB,
+               Context.Rounds, Context.Powers_4);
+         else
+            AES_NI.Decrypt_GCM_Stripe_4_128
+              (Buf (Base + Pos .. Base + Pos + 63), S, CB,
+               Context.Rounds (0 .. 175), Context.Powers_4);
+         end if;
+         Pos := Pos + 64;
+      end loop;
+
+      --  At most three full blocks and one partial block remain. Each is
+      --  GHASHed (zero-padded) before it is decrypted.
+      while Pos < Len loop
+         pragma Loop_Invariant (Pos < Len);
+         Count := N32'Min (16, Len - Pos);
+         Block := (others => 0);
+         Block (0 .. Count - 1) :=
+           Buf (Base + Pos .. Base + Pos + Count - 1);
+         XOR_Block (S, Block);
+         S := GF128_Mul (S, Context.H);
+         Prepared_Cipher (Stream, CB, Context);
+         Increment_Counter (CB);
+         for I in N32 range 0 .. Count - 1 loop
+            Buf (Base + Pos + I) := Buf (Base + Pos + I) xor Stream (I);
+         end loop;
+         Pos := Pos + Count;
+      end loop;
+
+      GHASH_Lengths (S, Context.H, N32 (AAD'Length), Len);
+      Computed := S;
+      XOR_Block (Computed, EJ0);
+      SPARKNaCl.Sanitize (Byte_Seq (Stream));
+      SPARKNaCl.Sanitize (Byte_Seq (Block));
+   end Hardware_Decrypt;
+
+   procedure Decrypt_Prepared
+     (Buf     : in out Byte_Seq;
+      Status  :    out Boolean;
+      Tag     : in     Bytes_16;
+      N       : in     Bytes_12;
+      Context : in     Prepared_Key;
+      AAD     : in     Byte_Seq)
+   is
+      Computed : Bytes_16;
+      Mask     : Byte;
+   begin
+      --  Context.Hardware is fixed at preparation from CPUID: public.
+      if Context.Hardware then
+         Hardware_Decrypt (Buf, Computed, N, Context, AAD);
+      else
+         Portable_Decrypt (Buf, Computed, N, Context, AAD);
+      end if;
+
+      --  Release the plaintext or zeros: one pass over the whole buffer
+      --  either way, no branch on the comparison.
+      Mask := Tag_Mask (Computed, Tag);
+      if Context.Hardware then
+         AES_NI.Mask_Bytes (Buf, Mask);
+      else
+         Mask_Portable (Buf, Mask);
+      end if;
+      Status := Mask = 16#FF#;
+      SPARKNaCl.Sanitize (Byte_Seq (Computed));
+   end Decrypt_Prepared;
+
+   procedure Decrypt_InPlace
+     (Buf    : in out Byte_Seq;
+      Status :    out Boolean;
+      Tag    : in     Bytes_16;
+      N      : in     Bytes_12;
+      K      : in     AES.AES128_Key;
+      AAD    : in     Byte_Seq)
+   is
+      Context : Prepared_Key;
+   begin
+      Prepare_128 (Context, K);
+      Decrypt_Prepared (Buf, Status, Tag, N, Context, AAD);
+      Clear (Context);
+   end Decrypt_InPlace;
+
+   procedure Decrypt_InPlace_256
+     (Buf    : in out Byte_Seq;
+      Status :    out Boolean;
+      Tag    : in     Bytes_16;
+      N      : in     Bytes_12;
+      K      : in     AES.AES256_Key;
+      AAD    : in     Byte_Seq)
+   is
+      Context : Prepared_Key;
+   begin
+      Prepare_256 (Context, K);
+      Decrypt_Prepared (Buf, Status, Tag, N, Context, AAD);
+      Clear (Context);
+   end Decrypt_InPlace_256;
 
 end SPARKTLSCrypto.AES_GCM;

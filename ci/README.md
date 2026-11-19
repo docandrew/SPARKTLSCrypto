@@ -62,6 +62,16 @@ skipped so the instruction behind them is what gets graded.
 `ci/mnemonics.sh --record` regenerates the lists for review after an
 intentional change.
 
+The AES-GCM decryption work added these mnemonics to the instruction-set
+allowlists: `aes_ni` gained the SSE2 masking loop of `Mask_Bytes` (`pand`,
+`movd`, `pshufd`, `movaps`, `movzbl`, integer `add`/`sub`/`inc`/`dec`/`cmp`/
+`test`, `movslq`, and the branches `jb`/`je`/`jg`/`jmp`, whose conditions
+depend only on the buffer length) and `pshufd $0x4e` in the Montgomery
+reduction of the stitched kernels; `aes_gcm_avx512` gained
+`vbroadcasti32x4` (round-key broadcast); `aes_gcm_avx2` is new. All are on
+Intel's data-operand-independent timing list or are control flow on public
+values (checked by ctgrind).
+
 ## ci/fuzz.sh: differential fuzzing of the tiers
 
 `tests/fuzz/diff_fuzz.adb` runs every accelerated tier against its proven
