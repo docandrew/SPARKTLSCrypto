@@ -58,4 +58,44 @@ is
       H_Powers : in     Pre_H_Powers_16)
    with Pre => Buf'Length = 256;
 
+   --  Encryption is pipelined over stripes, as in the AES-NI tier:
+   --    Encrypt_CTR_16             stripe 0 (no GHASH yet)
+   --    Encrypt_GHASH_Pipelined_16 stripe k, GHASHing stripe k-1, on a
+   --                               512-byte window of Buf
+   --    GHASH_16_Blocks            the last stripe
+   procedure Encrypt_CTR_16_128
+     (Buf    : in out Byte_Seq;
+      CB     : in out Bytes_16;
+      Pre_RK : in     AES_NI.Pre_Swapped_RKs_128)
+   with Pre => Buf'Length = 256;
+
+   procedure Encrypt_CTR_16_256
+     (Buf    : in out Byte_Seq;
+      CB     : in out Bytes_16;
+      Pre_RK : in     AES_NI.Pre_Swapped_RKs_256)
+   with Pre => Buf'Length = 256;
+
+   procedure Encrypt_GHASH_Pipelined_16_128
+     (Buf      : in out Byte_Seq;   --  [0..255] previous ct, [256..511] pt
+      S        : in out Bytes_16;
+      CB       : in out Bytes_16;
+      Pre_RK   : in     AES_NI.Pre_Swapped_RKs_128;
+      H_Powers : in     Pre_H_Powers_16)
+   with Pre => Buf'Length = 512;
+
+   procedure Encrypt_GHASH_Pipelined_16_256
+     (Buf      : in out Byte_Seq;
+      S        : in out Bytes_16;
+      CB       : in out Bytes_16;
+      Pre_RK   : in     AES_NI.Pre_Swapped_RKs_256;
+      H_Powers : in     Pre_H_Powers_16)
+   with Pre => Buf'Length = 512;
+
+   --  S := ((S ^ B0) * H^16) ^ (B1 * H^15) ^ ... ^ (B15 * H).
+   procedure GHASH_16_Blocks
+     (Buf      : in     Byte_Seq;
+      S        : in out Bytes_16;
+      H_Powers : in     Pre_H_Powers_16)
+   with Pre => Buf'Length = 256;
+
 end SPARKTLSCrypto.AES_GCM_AVX2;

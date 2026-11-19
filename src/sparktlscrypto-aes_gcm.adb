@@ -1212,6 +1212,35 @@ is
             end if;
             Pos := Pos + 256;
          end loop;
+      elsif AES_GCM_AVX2.Has_VAES_AVX2 and then Len >= 256 then
+         --  VAES on ymm, sixteen blocks per stripe, pipelined like the
+         --  AES-NI path below: encrypt stripe k while authenticating the
+         --  ciphertext of stripe k-1, then authenticate the last stripe.
+         if Context.Is_256 then
+            AES_GCM_AVX2.Encrypt_CTR_16_256
+              (Buf (Base .. Base + 255), CB, Context.Rounds);
+         else
+            AES_GCM_AVX2.Encrypt_CTR_16_128
+              (Buf (Base .. Base + 255), CB, Context.Rounds (0 .. 175));
+         end if;
+         Pos := 256;
+         while Len - Pos >= 256 loop
+            pragma Loop_Invariant
+              (Pos >= 256 and Pos <= Len and Pos mod 256 = 0);
+            if Context.Is_256 then
+               AES_GCM_AVX2.Encrypt_GHASH_Pipelined_16_256
+                 (Buf (Base + Pos - 256 .. Base + Pos + 255), S, CB,
+                  Context.Rounds, Context.Powers_32 (256 .. 511));
+            else
+               AES_GCM_AVX2.Encrypt_GHASH_Pipelined_16_128
+                 (Buf (Base + Pos - 256 .. Base + Pos + 255), S, CB,
+                  Context.Rounds (0 .. 175), Context.Powers_32 (256 .. 511));
+            end if;
+            Pos := Pos + 256;
+         end loop;
+         AES_GCM_AVX2.GHASH_16_Blocks
+           (Buf (Base + Pos - 256 .. Base + Pos - 1), S,
+            Context.Powers_32 (256 .. 511));
       elsif Len >= 128 then
          --  Keep the existing AES-NI pipeline: encrypt stripe k while
          --  authenticating stripe k-1. Only key preparation is hoisted.

@@ -680,6 +680,1103 @@ is
    end Decrypt_GCM_Stripe_16_256;
    --  END GENERATED avx2 decrypt 256
 
+   --  BEGIN GENERATED avx2 ctr 128
+   --  Encrypt the first stripe of a record (no GHASH yet).
+   procedure Encrypt_CTR_16_128
+     (Buf      : in out Byte_Seq;
+      CB       : in out Bytes_16;
+      Pre_RK   : in     AES_NI.Pre_Swapped_RKs_128)
+   is
+   begin
+      Asm
+       ("vbroadcasti128 (%0), %%ymm9" & ASCII.LF & ASCII.HT &
+        "vmovdqa (%6), %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpaddd (%7), %%ymm9, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vpaddd 32(%7), %%ymm9, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vpaddd 64(%7), %%ymm9, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vpaddd 96(%7), %%ymm9, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vpaddd 128(%7), %%ymm9, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vpaddd 160(%7), %%ymm9, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vpaddd 192(%7), %%ymm9, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vpaddd 224(%7), %%ymm9, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpaddd 256(%7), %%xmm9, %%xmm11" & ASCII.LF & ASCII.HT &
+        "vpshufb %%xmm10, %%xmm11, %%xmm11" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%xmm11, (%0)" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 (%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 16(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 32(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 48(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 64(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 80(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 96(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 112(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 128(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 144(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 160(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpxor (%2), %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm0, (%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 32(%2), %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm1, 32(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 64(%2), %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm2, 64(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 96(%2), %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm3, 96(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 128(%2), %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm4, 128(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 160(%2), %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm5, 160(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 192(%2), %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm6, 192(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 224(%2), %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm7, 224(%2)" & ASCII.LF & ASCII.HT &
+        "vzeroupper",
+        Inputs => (System.Address'Asm_Input ("r", CB'Address),
+                   System.Address'Asm_Input ("r", Pre_RK'Address),
+                   System.Address'Asm_Input ("r", Buf'Address),
+                   System.Address'Asm_Input ("r", Buf'Address),
+                   System.Address'Asm_Input ("r", Buf'Address),
+                   System.Address'Asm_Input ("r", Gen_Bswap_Mask'Address),
+                   System.Address'Asm_Input ("r", Gen_Reverse_Ctr_Mask'Address),
+                   System.Address'Asm_Input ("r", Gen_Ctr_Steps'Address),
+                   System.Address'Asm_Input ("r", Gen_Reduction_Poly'Address)),
+        Clobber => "xmm0,xmm1,xmm2,xmm3,xmm4,xmm5,xmm6,xmm7,xmm8,xmm9,xmm10,xmm11,memory",
+        Volatile => True);
+   end Encrypt_CTR_16_128;
+   --  END GENERATED avx2 ctr 128
+
+   --  BEGIN GENERATED avx2 ctr 256
+   --  Encrypt the first stripe of a record (no GHASH yet).
+   procedure Encrypt_CTR_16_256
+     (Buf      : in out Byte_Seq;
+      CB       : in out Bytes_16;
+      Pre_RK   : in     AES_NI.Pre_Swapped_RKs_256)
+   is
+   begin
+      Asm
+       ("vbroadcasti128 (%0), %%ymm9" & ASCII.LF & ASCII.HT &
+        "vmovdqa (%6), %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpaddd (%7), %%ymm9, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vpaddd 32(%7), %%ymm9, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vpaddd 64(%7), %%ymm9, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vpaddd 96(%7), %%ymm9, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vpaddd 128(%7), %%ymm9, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vpaddd 160(%7), %%ymm9, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vpaddd 192(%7), %%ymm9, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vpaddd 224(%7), %%ymm9, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpaddd 256(%7), %%xmm9, %%xmm11" & ASCII.LF & ASCII.HT &
+        "vpshufb %%xmm10, %%xmm11, %%xmm11" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%xmm11, (%0)" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 (%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 16(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 32(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 48(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 64(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 80(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 96(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 112(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 128(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 144(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 160(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 176(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 192(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 208(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 224(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpxor (%2), %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm0, (%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 32(%2), %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm1, 32(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 64(%2), %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm2, 64(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 96(%2), %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm3, 96(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 128(%2), %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm4, 128(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 160(%2), %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm5, 160(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 192(%2), %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm6, 192(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 224(%2), %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm7, 224(%2)" & ASCII.LF & ASCII.HT &
+        "vzeroupper",
+        Inputs => (System.Address'Asm_Input ("r", CB'Address),
+                   System.Address'Asm_Input ("r", Pre_RK'Address),
+                   System.Address'Asm_Input ("r", Buf'Address),
+                   System.Address'Asm_Input ("r", Buf'Address),
+                   System.Address'Asm_Input ("r", Buf'Address),
+                   System.Address'Asm_Input ("r", Gen_Bswap_Mask'Address),
+                   System.Address'Asm_Input ("r", Gen_Reverse_Ctr_Mask'Address),
+                   System.Address'Asm_Input ("r", Gen_Ctr_Steps'Address),
+                   System.Address'Asm_Input ("r", Gen_Reduction_Poly'Address)),
+        Clobber => "xmm0,xmm1,xmm2,xmm3,xmm4,xmm5,xmm6,xmm7,xmm8,xmm9,xmm10,xmm11,memory",
+        Volatile => True);
+   end Encrypt_CTR_16_256;
+   --  END GENERATED avx2 ctr 256
+
+   --  BEGIN GENERATED avx2 pipelined 128
+   --  Buf is a 512-byte window: GHASH the previous stripe's
+   --  ciphertext (bytes 0 .. 255) while encrypting bytes 256 .. 511.
+   procedure Encrypt_GHASH_Pipelined_16_128
+     (Buf      : in out Byte_Seq;
+      S        : in out Bytes_16;
+      CB       : in out Bytes_16;
+      Pre_RK   : in     AES_NI.Pre_Swapped_RKs_128;
+      H_Powers : in     Pre_H_Powers_16)
+   is
+   begin
+      Asm
+       ("vbroadcasti128 (%0), %%ymm9" & ASCII.LF & ASCII.HT &
+        "vmovdqa (%6), %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpaddd (%7), %%ymm9, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vpaddd 32(%7), %%ymm9, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vpaddd 64(%7), %%ymm9, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vpaddd 96(%7), %%ymm9, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vpaddd 128(%7), %%ymm9, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vpaddd 160(%7), %%ymm9, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vpaddd 192(%7), %%ymm9, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vpaddd 224(%7), %%ymm9, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpaddd 256(%7), %%xmm9, %%xmm11" & ASCII.LF & ASCII.HT &
+        "vpshufb %%xmm10, %%xmm11, %%xmm11" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%xmm11, (%0)" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 (%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 16(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vmovdqa (%5), %%ymm15" & ASCII.LF & ASCII.HT &
+        "vmovdqu (%2), %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm15, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu (%3), %%xmm14" & ASCII.LF & ASCII.HT &
+        "vpshufb %%xmm15, %%xmm14, %%xmm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu (%4), %%ymm13" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x00, %%ymm13, %%ymm12, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x11, %%ymm13, %%ymm12, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%ymm13, %%ymm12, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 32(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x01, %%ymm13, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm12, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vmovdqu 32(%2), %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm15, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu 32(%4), %%ymm13" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x00, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x11, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm10, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 48(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x01, %%ymm13, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm12, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vmovdqu 64(%2), %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm15, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu 64(%4), %%ymm13" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x00, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x11, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm10, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 64(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x01, %%ymm13, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm12, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vmovdqu 96(%2), %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm15, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu 96(%4), %%ymm13" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x00, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x11, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 80(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm10, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x01, %%ymm13, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm12, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vmovdqu 128(%2), %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm15, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu 128(%4), %%ymm13" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x00, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 96(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x11, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm10, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x01, %%ymm13, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm12, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vmovdqu 160(%2), %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm15, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu 160(%4), %%ymm13" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x00, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 112(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x11, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm10, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x01, %%ymm13, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm12, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vmovdqu 192(%2), %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm15, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu 192(%4), %%ymm13" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 128(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x00, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x11, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm10, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x01, %%ymm13, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm12, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vmovdqu 224(%2), %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm15, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 144(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vmovdqu 224(%4), %%ymm13" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x00, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x11, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm10, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x01, %%ymm13, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm12, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 160(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpxor 256(%2), %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm0, 256(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 288(%2), %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm1, 288(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 320(%2), %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm2, 320(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 352(%2), %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm3, 352(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 384(%2), %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm4, 384(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 416(%2), %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm5, 416(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 448(%2), %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm6, 448(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 480(%2), %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm7, 480(%2)" & ASCII.LF & ASCII.HT &
+        "vpslldq $8, %%ymm11, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpsrldq $8, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm11, %%ymm10, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vextracti128 $1, %%ymm9, %%xmm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%xmm14, %%xmm9, %%xmm9" & ASCII.LF & ASCII.HT &
+        "vextracti128 $1, %%ymm10, %%xmm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%xmm14, %%xmm10, %%xmm10" & ASCII.LF & ASCII.HT &
+        "vpsrld $31, %%xmm9, %%xmm0" & ASCII.LF & ASCII.HT &
+        "vpsrld $31, %%xmm10, %%xmm1" & ASCII.LF & ASCII.HT &
+        "vpslld $1, %%xmm9, %%xmm9" & ASCII.LF & ASCII.HT &
+        "vpslld $1, %%xmm10, %%xmm10" & ASCII.LF & ASCII.HT &
+        "vpsrldq $12, %%xmm0, %%xmm2" & ASCII.LF & ASCII.HT &
+        "vpslldq $4, %%xmm0, %%xmm0" & ASCII.LF & ASCII.HT &
+        "vpslldq $4, %%xmm1, %%xmm1" & ASCII.LF & ASCII.HT &
+        "vpor %%xmm0, %%xmm9, %%xmm9" & ASCII.LF & ASCII.HT &
+        "vpor %%xmm1, %%xmm10, %%xmm10" & ASCII.LF & ASCII.HT &
+        "vpor %%xmm2, %%xmm10, %%xmm10" & ASCII.LF & ASCII.HT &
+        "vmovdqa (%8), %%xmm3" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%xmm3, %%xmm9, %%xmm0" & ASCII.LF & ASCII.HT &
+        "vpshufd $0x4e, %%xmm9, %%xmm9" & ASCII.LF & ASCII.HT &
+        "vpxor %%xmm0, %%xmm9, %%xmm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%xmm3, %%xmm9, %%xmm0" & ASCII.LF & ASCII.HT &
+        "vpshufd $0x4e, %%xmm9, %%xmm9" & ASCII.LF & ASCII.HT &
+        "vpxor %%xmm0, %%xmm9, %%xmm9" & ASCII.LF & ASCII.HT &
+        "vpxor %%xmm9, %%xmm10, %%xmm10" & ASCII.LF & ASCII.HT &
+        "vpshufb %%xmm15, %%xmm10, %%xmm10" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%xmm10, (%3)" & ASCII.LF & ASCII.HT &
+        "vzeroupper",
+        Inputs => (System.Address'Asm_Input ("r", CB'Address),
+                   System.Address'Asm_Input ("r", Pre_RK'Address),
+                   System.Address'Asm_Input ("r", Buf'Address),
+                   System.Address'Asm_Input ("r", S'Address),
+                   System.Address'Asm_Input ("r", H_Powers'Address),
+                   System.Address'Asm_Input ("r", Gen_Bswap_Mask'Address),
+                   System.Address'Asm_Input ("r", Gen_Reverse_Ctr_Mask'Address),
+                   System.Address'Asm_Input ("r", Gen_Ctr_Steps'Address),
+                   System.Address'Asm_Input ("r", Gen_Reduction_Poly'Address)),
+        Clobber => "xmm0,xmm1,xmm2,xmm3,xmm4,xmm5,xmm6,xmm7,xmm8,xmm9,xmm10,xmm11,xmm12,xmm13,xmm14,xmm15,memory",
+        Volatile => True);
+   end Encrypt_GHASH_Pipelined_16_128;
+   --  END GENERATED avx2 pipelined 128
+
+   --  BEGIN GENERATED avx2 pipelined 256
+   --  Buf is a 512-byte window: GHASH the previous stripe's
+   --  ciphertext (bytes 0 .. 255) while encrypting bytes 256 .. 511.
+   procedure Encrypt_GHASH_Pipelined_16_256
+     (Buf      : in out Byte_Seq;
+      S        : in out Bytes_16;
+      CB       : in out Bytes_16;
+      Pre_RK   : in     AES_NI.Pre_Swapped_RKs_256;
+      H_Powers : in     Pre_H_Powers_16)
+   is
+   begin
+      Asm
+       ("vbroadcasti128 (%0), %%ymm9" & ASCII.LF & ASCII.HT &
+        "vmovdqa (%6), %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpaddd (%7), %%ymm9, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vpaddd 32(%7), %%ymm9, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vpaddd 64(%7), %%ymm9, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vpaddd 96(%7), %%ymm9, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vpaddd 128(%7), %%ymm9, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vpaddd 160(%7), %%ymm9, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vpaddd 192(%7), %%ymm9, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vpaddd 224(%7), %%ymm9, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm10, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpaddd 256(%7), %%xmm9, %%xmm11" & ASCII.LF & ASCII.HT &
+        "vpshufb %%xmm10, %%xmm11, %%xmm11" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%xmm11, (%0)" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 (%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 16(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vmovdqa (%5), %%ymm15" & ASCII.LF & ASCII.HT &
+        "vmovdqu (%2), %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm15, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu (%3), %%xmm14" & ASCII.LF & ASCII.HT &
+        "vpshufb %%xmm15, %%xmm14, %%xmm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu (%4), %%ymm13" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 32(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x00, %%ymm13, %%ymm12, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x11, %%ymm13, %%ymm12, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%ymm13, %%ymm12, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x01, %%ymm13, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm12, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vmovdqu 32(%2), %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm15, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 48(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vmovdqu 32(%4), %%ymm13" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x00, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x11, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm10, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 64(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x01, %%ymm13, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm12, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vmovdqu 64(%2), %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm15, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu 64(%4), %%ymm13" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x00, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 80(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x11, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm10, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x01, %%ymm13, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm12, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vmovdqu 96(%2), %%ymm12" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 96(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm15, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu 96(%4), %%ymm13" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x00, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x11, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm10, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 112(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x01, %%ymm13, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm12, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vmovdqu 128(%2), %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm15, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu 128(%4), %%ymm13" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x00, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 128(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x11, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm10, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x01, %%ymm13, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm12, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 144(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vmovdqu 160(%2), %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm15, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu 160(%4), %%ymm13" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x00, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x11, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm10, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 160(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x01, %%ymm13, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm12, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vmovdqu 192(%2), %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm15, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu 192(%4), %%ymm13" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 176(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x00, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x11, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm10, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x01, %%ymm13, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 192(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm12, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vmovdqu 224(%2), %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm15, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu 224(%4), %%ymm13" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x00, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x11, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 208(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenc %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm10, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x01, %%ymm13, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm12, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 224(%1), %%ymm8" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vaesenclast %%ymm8, %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vpxor 256(%2), %%ymm0, %%ymm0" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm0, 256(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 288(%2), %%ymm1, %%ymm1" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm1, 288(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 320(%2), %%ymm2, %%ymm2" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm2, 320(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 352(%2), %%ymm3, %%ymm3" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm3, 352(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 384(%2), %%ymm4, %%ymm4" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm4, 384(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 416(%2), %%ymm5, %%ymm5" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm5, 416(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 448(%2), %%ymm6, %%ymm6" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm6, 448(%2)" & ASCII.LF & ASCII.HT &
+        "vpxor 480(%2), %%ymm7, %%ymm7" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm7, 480(%2)" & ASCII.LF & ASCII.HT &
+        "vpslldq $8, %%ymm11, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpsrldq $8, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm11, %%ymm10, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vextracti128 $1, %%ymm9, %%xmm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%xmm14, %%xmm9, %%xmm9" & ASCII.LF & ASCII.HT &
+        "vextracti128 $1, %%ymm10, %%xmm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%xmm14, %%xmm10, %%xmm10" & ASCII.LF & ASCII.HT &
+        "vpsrld $31, %%xmm9, %%xmm0" & ASCII.LF & ASCII.HT &
+        "vpsrld $31, %%xmm10, %%xmm1" & ASCII.LF & ASCII.HT &
+        "vpslld $1, %%xmm9, %%xmm9" & ASCII.LF & ASCII.HT &
+        "vpslld $1, %%xmm10, %%xmm10" & ASCII.LF & ASCII.HT &
+        "vpsrldq $12, %%xmm0, %%xmm2" & ASCII.LF & ASCII.HT &
+        "vpslldq $4, %%xmm0, %%xmm0" & ASCII.LF & ASCII.HT &
+        "vpslldq $4, %%xmm1, %%xmm1" & ASCII.LF & ASCII.HT &
+        "vpor %%xmm0, %%xmm9, %%xmm9" & ASCII.LF & ASCII.HT &
+        "vpor %%xmm1, %%xmm10, %%xmm10" & ASCII.LF & ASCII.HT &
+        "vpor %%xmm2, %%xmm10, %%xmm10" & ASCII.LF & ASCII.HT &
+        "vmovdqa (%8), %%xmm3" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%xmm3, %%xmm9, %%xmm0" & ASCII.LF & ASCII.HT &
+        "vpshufd $0x4e, %%xmm9, %%xmm9" & ASCII.LF & ASCII.HT &
+        "vpxor %%xmm0, %%xmm9, %%xmm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%xmm3, %%xmm9, %%xmm0" & ASCII.LF & ASCII.HT &
+        "vpshufd $0x4e, %%xmm9, %%xmm9" & ASCII.LF & ASCII.HT &
+        "vpxor %%xmm0, %%xmm9, %%xmm9" & ASCII.LF & ASCII.HT &
+        "vpxor %%xmm9, %%xmm10, %%xmm10" & ASCII.LF & ASCII.HT &
+        "vpshufb %%xmm15, %%xmm10, %%xmm10" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%xmm10, (%3)" & ASCII.LF & ASCII.HT &
+        "vzeroupper",
+        Inputs => (System.Address'Asm_Input ("r", CB'Address),
+                   System.Address'Asm_Input ("r", Pre_RK'Address),
+                   System.Address'Asm_Input ("r", Buf'Address),
+                   System.Address'Asm_Input ("r", S'Address),
+                   System.Address'Asm_Input ("r", H_Powers'Address),
+                   System.Address'Asm_Input ("r", Gen_Bswap_Mask'Address),
+                   System.Address'Asm_Input ("r", Gen_Reverse_Ctr_Mask'Address),
+                   System.Address'Asm_Input ("r", Gen_Ctr_Steps'Address),
+                   System.Address'Asm_Input ("r", Gen_Reduction_Poly'Address)),
+        Clobber => "xmm0,xmm1,xmm2,xmm3,xmm4,xmm5,xmm6,xmm7,xmm8,xmm9,xmm10,xmm11,xmm12,xmm13,xmm14,xmm15,memory",
+        Volatile => True);
+   end Encrypt_GHASH_Pipelined_16_256;
+   --  END GENERATED avx2 pipelined 256
+
+   --  BEGIN GENERATED avx2 ghash
+   --  Fold 256 bytes into S: the last stripe of a pipelined record.
+   procedure GHASH_16_Blocks
+     (Buf      : in     Byte_Seq;
+      S        : in out Bytes_16;
+      H_Powers : in     Pre_H_Powers_16)
+   is
+   begin
+      Asm
+       ("vmovdqa (%5), %%ymm15" & ASCII.LF & ASCII.HT &
+        "vmovdqu (%2), %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm15, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu (%3), %%xmm14" & ASCII.LF & ASCII.HT &
+        "vpshufb %%xmm15, %%xmm14, %%xmm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu (%4), %%ymm13" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x00, %%ymm13, %%ymm12, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x11, %%ymm13, %%ymm12, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%ymm13, %%ymm12, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x01, %%ymm13, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm12, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vmovdqu 32(%2), %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm15, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu 32(%4), %%ymm13" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x00, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x11, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm10, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x01, %%ymm13, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm12, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vmovdqu 64(%2), %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm15, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu 64(%4), %%ymm13" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x00, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x11, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm10, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x01, %%ymm13, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm12, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vmovdqu 96(%2), %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm15, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu 96(%4), %%ymm13" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x00, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x11, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm10, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x01, %%ymm13, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm12, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vmovdqu 128(%2), %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm15, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu 128(%4), %%ymm13" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x00, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x11, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm10, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x01, %%ymm13, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm12, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vmovdqu 160(%2), %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm15, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu 160(%4), %%ymm13" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x00, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x11, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm10, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x01, %%ymm13, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm12, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vmovdqu 192(%2), %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm15, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu 192(%4), %%ymm13" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x00, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x11, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm10, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x01, %%ymm13, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm12, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vmovdqu 224(%2), %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpshufb %%ymm15, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vmovdqu 224(%4), %%ymm13" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x00, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x11, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm10, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%ymm13, %%ymm12, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x01, %%ymm13, %%ymm12, %%ymm12" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm12, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpslldq $8, %%ymm11, %%ymm14" & ASCII.LF & ASCII.HT &
+        "vpsrldq $8, %%ymm11, %%ymm11" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm14, %%ymm9, %%ymm9" & ASCII.LF & ASCII.HT &
+        "vpxor %%ymm11, %%ymm10, %%ymm10" & ASCII.LF & ASCII.HT &
+        "vextracti128 $1, %%ymm9, %%xmm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%xmm14, %%xmm9, %%xmm9" & ASCII.LF & ASCII.HT &
+        "vextracti128 $1, %%ymm10, %%xmm14" & ASCII.LF & ASCII.HT &
+        "vpxor %%xmm14, %%xmm10, %%xmm10" & ASCII.LF & ASCII.HT &
+        "vpsrld $31, %%xmm9, %%xmm0" & ASCII.LF & ASCII.HT &
+        "vpsrld $31, %%xmm10, %%xmm1" & ASCII.LF & ASCII.HT &
+        "vpslld $1, %%xmm9, %%xmm9" & ASCII.LF & ASCII.HT &
+        "vpslld $1, %%xmm10, %%xmm10" & ASCII.LF & ASCII.HT &
+        "vpsrldq $12, %%xmm0, %%xmm2" & ASCII.LF & ASCII.HT &
+        "vpslldq $4, %%xmm0, %%xmm0" & ASCII.LF & ASCII.HT &
+        "vpslldq $4, %%xmm1, %%xmm1" & ASCII.LF & ASCII.HT &
+        "vpor %%xmm0, %%xmm9, %%xmm9" & ASCII.LF & ASCII.HT &
+        "vpor %%xmm1, %%xmm10, %%xmm10" & ASCII.LF & ASCII.HT &
+        "vpor %%xmm2, %%xmm10, %%xmm10" & ASCII.LF & ASCII.HT &
+        "vmovdqa (%8), %%xmm3" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%xmm3, %%xmm9, %%xmm0" & ASCII.LF & ASCII.HT &
+        "vpshufd $0x4e, %%xmm9, %%xmm9" & ASCII.LF & ASCII.HT &
+        "vpxor %%xmm0, %%xmm9, %%xmm9" & ASCII.LF & ASCII.HT &
+        "vpclmulqdq $0x10, %%xmm3, %%xmm9, %%xmm0" & ASCII.LF & ASCII.HT &
+        "vpshufd $0x4e, %%xmm9, %%xmm9" & ASCII.LF & ASCII.HT &
+        "vpxor %%xmm0, %%xmm9, %%xmm9" & ASCII.LF & ASCII.HT &
+        "vpxor %%xmm9, %%xmm10, %%xmm10" & ASCII.LF & ASCII.HT &
+        "vpshufb %%xmm15, %%xmm10, %%xmm10" & ASCII.LF & ASCII.HT &
+        "vmovdqu %%xmm10, (%3)" & ASCII.LF & ASCII.HT &
+        "vzeroupper",
+        Inputs => (System.Address'Asm_Input ("r", Buf'Address),
+                   System.Address'Asm_Input ("r", Buf'Address),
+                   System.Address'Asm_Input ("r", Buf'Address),
+                   System.Address'Asm_Input ("r", S'Address),
+                   System.Address'Asm_Input ("r", H_Powers'Address),
+                   System.Address'Asm_Input ("r", Gen_Bswap_Mask'Address),
+                   System.Address'Asm_Input ("r", Gen_Reverse_Ctr_Mask'Address),
+                   System.Address'Asm_Input ("r", Gen_Ctr_Steps'Address),
+                   System.Address'Asm_Input ("r", Gen_Reduction_Poly'Address)),
+        Clobber => "xmm0,xmm1,xmm2,xmm3,xmm9,xmm10,xmm11,xmm12,xmm13,xmm14,xmm15,memory",
+        Volatile => True);
+   end GHASH_16_Blocks;
+   --  END GENERATED avx2 ghash
+
 begin
    --  CPU.Has_AVX2 is False in a Portable_Only build.
    Has_VAES_AVX2 := SPARKTLSCrypto.CPU.Has_AVX2

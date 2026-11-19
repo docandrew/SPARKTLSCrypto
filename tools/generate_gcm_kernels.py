@@ -416,6 +416,17 @@ def regions():
             16, f"AES_NI.Pre_Swapped_RKs_{bits}", "Pre_H_Powers_16",
             dec_comment)
         out[f"avx2 decrypt {bits}"] = (avx2, text)
+        text = ada_procedure(
+            f"Encrypt_CTR_16_{bits}", YMM, 8, rounds, True, False, 0, 16,
+            f"AES_NI.Pre_Swapped_RKs_{bits}", "Pre_H_Powers_16",
+            ["Encrypt the first stripe of a record (no GHASH yet)."])
+        out[f"avx2 ctr {bits}"] = (avx2, text)
+        text = ada_procedure(
+            f"Encrypt_GHASH_Pipelined_16_{bits}", YMM, 8, rounds, True, True,
+            256, 16, f"AES_NI.Pre_Swapped_RKs_{bits}", "Pre_H_Powers_16",
+            ["Buf is a 512-byte window: GHASH the previous stripe's",
+             "ciphertext (bytes 0 .. 255) while encrypting bytes 256 .. 511."])
+        out[f"avx2 pipelined {bits}"] = (avx2, text)
 
         text = ada_procedure(
             f"Decrypt_GCM_Stripe_16_{bits}", ZMM, 4, rounds, True, True, 0,
@@ -428,6 +439,10 @@ def regions():
             dec_comment)
         out[f"avx512 decrypt32 {bits}"] = (avx512, text)
 
+    out["avx2 ghash"] = (avx2, ada_procedure(
+        "GHASH_16_Blocks", YMM, 8, 10, False, True, 0, 16,
+        "", "Pre_H_Powers_16",
+        ["Fold 256 bytes into S: the last stripe of a pipelined record."]))
     return out
 
 
