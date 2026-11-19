@@ -1777,6 +1777,61 @@ is
    end GHASH_16_Blocks;
    --  END GENERATED avx2 ghash
 
+   ----------------------------------------------------------------------------
+   --  Branch-free masking (see AES_NI.Mask_Bytes)
+   ----------------------------------------------------------------------------
+   --  rdi walks Buf, rcx counts the bytes left; the loop conditions use
+   --  only Buf'Length. Mask is replicated into ymm0 and al.
+
+   procedure Mask_Bytes (Buf : in out Byte_Seq; Mask : in Byte) is
+      Mask_16 : constant Bytes_16 := (others => Mask);
+   begin
+      if Buf'Length = 0 then
+         return;
+      end if;
+      Asm
+       ("mov     %0, %%rdi"                     & ASCII.LF & ASCII.HT &
+        "mov     %1, %%rcx"                     & ASCII.LF & ASCII.HT &
+        "vbroadcasti128 (%2), %%ymm0"           & ASCII.LF & ASCII.HT &
+        "movzbl  (%2), %%eax"                   & ASCII.LF & ASCII.HT &
+        "1:"                                    & ASCII.LF & ASCII.HT &
+        "cmp     $128, %%rcx"                   & ASCII.LF & ASCII.HT &
+        "jb      2f"                            & ASCII.LF & ASCII.HT &
+        "vpand     (%%rdi), %%ymm0, %%ymm1"     & ASCII.LF & ASCII.HT &
+        "vpand   32(%%rdi), %%ymm0, %%ymm2"     & ASCII.LF & ASCII.HT &
+        "vpand   64(%%rdi), %%ymm0, %%ymm3"     & ASCII.LF & ASCII.HT &
+        "vpand   96(%%rdi), %%ymm0, %%ymm4"     & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm1,   (%%rdi)"             & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm2, 32(%%rdi)"             & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm3, 64(%%rdi)"             & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm4, 96(%%rdi)"             & ASCII.LF & ASCII.HT &
+        "add     $128, %%rdi"                   & ASCII.LF & ASCII.HT &
+        "sub     $128, %%rcx"                   & ASCII.LF & ASCII.HT &
+        "jmp     1b"                            & ASCII.LF & ASCII.HT &
+        "2:"                                    & ASCII.LF & ASCII.HT &
+        "cmp     $32, %%rcx"                    & ASCII.LF & ASCII.HT &
+        "jb      3f"                            & ASCII.LF & ASCII.HT &
+        "vpand   (%%rdi), %%ymm0, %%ymm1"       & ASCII.LF & ASCII.HT &
+        "vmovdqu %%ymm1, (%%rdi)"               & ASCII.LF & ASCII.HT &
+        "add     $32, %%rdi"                    & ASCII.LF & ASCII.HT &
+        "sub     $32, %%rcx"                    & ASCII.LF & ASCII.HT &
+        "jmp     2b"                            & ASCII.LF & ASCII.HT &
+        "3:"                                    & ASCII.LF & ASCII.HT &
+        "test    %%rcx, %%rcx"                  & ASCII.LF & ASCII.HT &
+        "jz      4f"                            & ASCII.LF & ASCII.HT &
+        "andb    %%al, (%%rdi)"                 & ASCII.LF & ASCII.HT &
+        "inc     %%rdi"                         & ASCII.LF & ASCII.HT &
+        "dec     %%rcx"                         & ASCII.LF & ASCII.HT &
+        "jmp     3b"                            & ASCII.LF & ASCII.HT &
+        "4:"                                    & ASCII.LF & ASCII.HT &
+        "vzeroupper",
+        Inputs => (System.Address'Asm_Input ("r", Buf'Address),
+                   Unsigned_64'Asm_Input ("r", Unsigned_64 (Buf'Length)),
+                   System.Address'Asm_Input ("r", Mask_16'Address)),
+        Clobber => "rax,rcx,rdi,xmm0,xmm1,xmm2,xmm3,xmm4,memory,cc",
+        Volatile => True);
+   end Mask_Bytes;
+
 begin
    --  CPU.Has_AVX2 is False in a Portable_Only build.
    Has_VAES_AVX2 := SPARKTLSCrypto.CPU.Has_AVX2

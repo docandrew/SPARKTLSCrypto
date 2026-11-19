@@ -1560,7 +1560,9 @@ is
       --  Release the plaintext or zeros: one pass over the whole buffer
       --  either way, no branch on the comparison.
       Mask := Tag_Mask (Computed, Tag);
-      if Context.Hardware then
+      if Context.Hardware and AES_GCM_AVX2.Has_VAES_AVX2 then
+         AES_GCM_AVX2.Mask_Bytes (Buf, Mask);
+      elsif Context.Hardware then
          AES_NI.Mask_Bytes (Buf, Mask);
       else
          Mask_Portable (Buf, Mask);

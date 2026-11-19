@@ -98,4 +98,11 @@ is
       H_Powers : in     Pre_H_Powers_16)
    with Pre => Buf'Length = 256;
 
+   --  AES_NI.Mask_Bytes on 256-bit registers, 128 bytes per step: the
+   --  same contract, the same instructions and addresses for either mask.
+   procedure Mask_Bytes (Buf : in out Byte_Seq; Mask : in Byte)
+   with Pre  => Mask = 0 or Mask = 16#FF#,
+        Post => (if Mask = 0 then (for all I in Buf'Range => Buf (I) = 0))
+                and (if Mask = 16#FF# then Buf = Buf'Old);
+
 end SPARKTLSCrypto.AES_GCM_AVX2;
