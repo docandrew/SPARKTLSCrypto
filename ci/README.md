@@ -69,9 +69,17 @@ allowlists: `aes_ni` gained the SSE2 masking loop of `Mask_Bytes` (`pand`,
 depend only on the buffer length) and `pshufd $0x4e` in the Montgomery
 reduction of the stitched kernels; `aes_gcm_avx512` gained
 `vbroadcasti32x4` (round-key broadcast); `aes_gcm_avx2` is new, with the
-same masking loop on ymm (`vpand`, `vpbroadcastb`, `vmovd`). All are on
-Intel's data-operand-independent timing list or are control flow on public
-values (checked by ctgrind).
+same masking loop on ymm (`vpand`, `vpbroadcastb`, `vmovd`). The data
+instructions are on Intel's data-operand-independent timing list. How the
+control flow is checked: both masking loops run under memcheck with a
+tainted mask in `ct_mask_bytes` (the AVX2 one needs only AVX2, which
+Valgrind executes; a variant that branches on the mask is reported), and
+the SSE2 one also inside `ct_decrypt_prepared`. The stitched stripe
+kernels contain no control flow at all: `tools/generate_gcm_kernels.py`
+asserts that no branch, call, `cmov` or `set` is emitted. Valgrind cannot
+execute VAES, so the VAES kernels are not run under memcheck; their
+evidence is that straight-line construction, the mnemonic gate and the
+dudect lane.
 
 ## ci/fuzz.sh: differential fuzzing of the tiers
 

@@ -24,6 +24,7 @@ project Timing is
                  "ct_aead_decrypt.adb",
                  "ct_decrypt_prepared.adb",
                  "ct_decrypt_status_leak.adb",
+                 "ct_mask_bytes.adb",
                  "ct_rfc6979.adb",
                  "ct_hmac.adb",
                  "ct_rsa_sign_plain.adb",

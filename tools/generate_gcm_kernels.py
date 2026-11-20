@@ -313,6 +313,14 @@ def kernel(isa, regs, rounds, aes, ghash, x_disp, power_count):
                      f"vmovdqu {x(hi)}, {mem(OP_S)}"]
     if not isa.sse:
         code += ["vzeroupper"]
+    #  Constant time by construction: straight-line code, no control flow
+    #  at all (so nothing can depend on the data, and Valgrind need not
+    #  run the VAES kernels to show it).
+    for line in code:
+        mnemonic = line.split()[0]
+        assert not (mnemonic.startswith(("j", "loop", "cmov", "set"))
+                    or mnemonic in ("call", "ret", "jmp")), (
+            "branch or data-dependent select in a kernel: " + line)
     return code
 
 
