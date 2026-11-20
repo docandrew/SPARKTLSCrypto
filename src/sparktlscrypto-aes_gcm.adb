@@ -1439,6 +1439,10 @@ is
       pragma Warnings (GNATprove, Off, "statement has no effect");
       pragma Warnings (GNATprove, Off, "*is set by*");
       SPARKNaCl.Sanitize (Byte_Seq (H));
+      --  S xor EJ0 is the expected tag: wipe both, as Decrypt_Prepared
+      --  wipes Computed.
+      SPARKNaCl.Sanitize (Byte_Seq (S));
+      SPARKNaCl.Sanitize (Byte_Seq (EJ0));
       pragma Warnings (GNATprove, On, "*is set by*");
       pragma Warnings (GNATprove, On, "statement has no effect");
    end Portable_Decrypt;
@@ -1557,6 +1561,10 @@ is
       pragma Warnings (GNATprove, Off, "*is set by*");
       SPARKNaCl.Sanitize (Byte_Seq (Stream));
       SPARKNaCl.Sanitize (Byte_Seq (Block));
+      --  S xor EJ0 is the expected tag: wipe both, as Decrypt_Prepared
+      --  wipes Computed.
+      SPARKNaCl.Sanitize (Byte_Seq (S));
+      SPARKNaCl.Sanitize (Byte_Seq (EJ0));
       pragma Warnings (GNATprove, On, "*is set by*");
       pragma Warnings (GNATprove, On, "statement has no effect");
    end Hardware_Decrypt;
