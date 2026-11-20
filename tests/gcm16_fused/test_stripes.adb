@@ -8,7 +8,8 @@
 --  accumulators, and counter blocks whose 32-bit counter wraps inside the
 --  stripe. Guard bytes around the buffer and the accumulator, and the
 --  round keys, powers and (for GHASH-only kernels) the data must be left
---  untouched. Kernels the CPU lacks are reported as skipped.
+--  untouched; each case is rerun with the buffer and the powers against
+--  PROT_NONE guard pages (both ends), so reads outside them fault too. Kernels the CPU lacks are reported as skipped.
 with Ada.Text_IO; use Ada.Text_IO;
 with Interfaces; use Interfaces;
 with SPARKNaCl; use SPARKNaCl;
@@ -18,6 +19,9 @@ with SPARKTLSCrypto.GHASH_NI;
 with SPARKTLSCrypto.GHASH_Dispatch;
 with SPARKTLSCrypto.AES_GCM_AVX2;
 with SPARKTLSCrypto.AES_GCM_AVX512;
+with System;
+with System.Storage_Elements;
+with Guarded_Memory;
 
 procedure Test_Stripes is
    package AVX2 renames SPARKTLSCrypto.AES_GCM_AVX2;
@@ -68,6 +72,10 @@ procedure Test_Stripes is
 
    Count : Natural := 0;
    Guard : constant Byte := 16#5A#;
+
+   use type System.Storage_Elements.Storage_Offset;
+   Buf_Region : constant Guarded_Memory.Region := Guarded_Memory.Allocate (512);
+   Pow_Region : constant Guarded_Memory.Region := Guarded_Memory.Allocate (512);
 
    procedure Check (OK : Boolean; What : String) is
    begin
@@ -177,64 +185,106 @@ procedure Test_Stripes is
       declare
          Saved_Powers : constant Byte_Seq := Powers;
          Saved_RK : constant Pre_Swapped_RKs_256 := RK;
-         Buf : Byte_Seq renames Storage (First .. First + W - 1);
-         P16 : Byte_Seq renames Powers (256 .. 511);
-         P4  : Byte_Seq renames Powers (448 .. 511);
+         Input : constant Byte_Seq := Storage (First .. First + W - 1);
+
+         --  The kernel K on Buf, reading the powers from Pw (H^32 .. H^1).
+         procedure Call (Buf : in out Byte_Seq; Pw : Byte_Seq) is
+            P16 : Byte_Seq renames Pw (Pw'First + 256 .. Pw'First + 511);
+            P4  : Byte_Seq renames Pw (Pw'First + 448 .. Pw'First + 511);
+            Powers : Byte_Seq renames Pw;
+         begin
+            case K is
+               when NI_Decrypt_4 =>
+                  if Bits = 128 then
+                     Decrypt_GCM_Stripe_4_128 (Buf, S_Store (16 .. 31),
+                        CB_Store (16 .. 31), RK (0 .. 175), P4);
+                  else
+                     Decrypt_GCM_Stripe_4_256 (Buf, S_Store (16 .. 31),
+                        CB_Store (16 .. 31), RK, P4);
+                  end if;
+               when Y_Decrypt_16 =>
+                  if Bits = 128 then
+                     AVX2.Decrypt_GCM_Stripe_16_128 (Buf, S_Store (16 .. 31),
+                        CB_Store (16 .. 31), RK (0 .. 175), P16);
+                  else
+                     AVX2.Decrypt_GCM_Stripe_16_256 (Buf, S_Store (16 .. 31),
+                        CB_Store (16 .. 31), RK, P16);
+                  end if;
+               when Y_CTR_16 =>
+                  if Bits = 128 then
+                     AVX2.Encrypt_CTR_16_128 (Buf, CB_Store (16 .. 31),
+                                              RK (0 .. 175));
+                  else
+                     AVX2.Encrypt_CTR_16_256 (Buf, CB_Store (16 .. 31), RK);
+                  end if;
+               when Y_Pipelined_16 =>
+                  if Bits = 128 then
+                     AVX2.Encrypt_GHASH_Pipelined_16_128 (Buf,
+                        S_Store (16 .. 31), CB_Store (16 .. 31), RK (0 .. 175),
+                        P16);
+                  else
+                     AVX2.Encrypt_GHASH_Pipelined_16_256 (Buf,
+                        S_Store (16 .. 31), CB_Store (16 .. 31), RK, P16);
+                  end if;
+               when Y_GHASH_16 =>
+                  AVX2.GHASH_16_Blocks (Buf, S_Store (16 .. 31), P16);
+               when Z_Decrypt_16 =>
+                  if Bits = 128 then
+                     AVX512.Decrypt_GCM_Stripe_16_128 (Buf, S_Store (16 .. 31),
+                        CB_Store (16 .. 31), RK (0 .. 175), P16);
+                  else
+                     AVX512.Decrypt_GCM_Stripe_16_256 (Buf, S_Store (16 .. 31),
+                        CB_Store (16 .. 31), RK, P16);
+                  end if;
+               when Z_Decrypt_32 =>
+                  if Bits = 128 then
+                     AVX512.Decrypt_GCM_Stripe_32_128 (Buf, S_Store (16 .. 31),
+                        CB_Store (16 .. 31), RK (0 .. 175), Powers);
+                  else
+                     AVX512.Decrypt_GCM_Stripe_32_256 (Buf, S_Store (16 .. 31),
+                        CB_Store (16 .. 31), RK, Powers);
+                  end if;
+            end case;
+         end Call;
       begin
-         case K is
-            when NI_Decrypt_4 =>
-               if Bits = 128 then
-                  Decrypt_GCM_Stripe_4_128 (Buf, S_Store (16 .. 31),
-                     CB_Store (16 .. 31), RK (0 .. 175), P4);
-               else
-                  Decrypt_GCM_Stripe_4_256 (Buf, S_Store (16 .. 31),
-                     CB_Store (16 .. 31), RK, P4);
-               end if;
-            when Y_Decrypt_16 =>
-               if Bits = 128 then
-                  AVX2.Decrypt_GCM_Stripe_16_128 (Buf, S_Store (16 .. 31),
-                     CB_Store (16 .. 31), RK (0 .. 175), P16);
-               else
-                  AVX2.Decrypt_GCM_Stripe_16_256 (Buf, S_Store (16 .. 31),
-                     CB_Store (16 .. 31), RK, P16);
-               end if;
-            when Y_CTR_16 =>
-               if Bits = 128 then
-                  AVX2.Encrypt_CTR_16_128 (Buf, CB_Store (16 .. 31),
-                                           RK (0 .. 175));
-               else
-                  AVX2.Encrypt_CTR_16_256 (Buf, CB_Store (16 .. 31), RK);
-               end if;
-            when Y_Pipelined_16 =>
-               if Bits = 128 then
-                  AVX2.Encrypt_GHASH_Pipelined_16_128 (Buf,
-                     S_Store (16 .. 31), CB_Store (16 .. 31), RK (0 .. 175),
-                     P16);
-               else
-                  AVX2.Encrypt_GHASH_Pipelined_16_256 (Buf,
-                     S_Store (16 .. 31), CB_Store (16 .. 31), RK, P16);
-               end if;
-            when Y_GHASH_16 =>
-               AVX2.GHASH_16_Blocks (Buf, S_Store (16 .. 31), P16);
-            when Z_Decrypt_16 =>
-               if Bits = 128 then
-                  AVX512.Decrypt_GCM_Stripe_16_128 (Buf, S_Store (16 .. 31),
-                     CB_Store (16 .. 31), RK (0 .. 175), P16);
-               else
-                  AVX512.Decrypt_GCM_Stripe_16_256 (Buf, S_Store (16 .. 31),
-                     CB_Store (16 .. 31), RK, P16);
-               end if;
-            when Z_Decrypt_32 =>
-               if Bits = 128 then
-                  AVX512.Decrypt_GCM_Stripe_32_128 (Buf, S_Store (16 .. 31),
-                     CB_Store (16 .. 31), RK (0 .. 175), Powers);
-               else
-                  AVX512.Decrypt_GCM_Stripe_32_256 (Buf, S_Store (16 .. 31),
-                     CB_Store (16 .. 31), RK, Powers);
-               end if;
-         end case;
+         Call (Storage (First .. First + W - 1), Powers);
          Check (Powers = Saved_Powers and RK = Saved_RK,
                 K'Image & ": powers or round keys modified");
+
+         --  Again with the buffer and the powers against PROT_NONE guard
+         --  pages (ending at one, then starting right after one): a read
+         --  or write outside either faults. Same results, same state.
+         declare
+            Main_Buf : constant Byte_Seq := Storage (First .. First + W - 1);
+            Main_S   : constant Byte_Seq := S_Store (16 .. 31);
+            Main_CB  : constant Byte_Seq := CB_Store (16 .. 31);
+         begin
+            for At_End in Boolean loop
+               declare
+                  use type System.Storage_Elements.Storage_Offset;
+                  B_Addr : constant System.Address :=
+                    (if At_End then Guarded_Memory.At_End
+                       (Buf_Region, System.Storage_Elements.Storage_Offset (W))
+                     else Guarded_Memory.At_Start (Buf_Region));
+                  P_Addr : constant System.Address :=
+                    (if At_End then Guarded_Memory.At_End (Pow_Region, 512)
+                     else Guarded_Memory.At_Start (Pow_Region));
+                  G_Buf : Byte_Seq (0 .. W - 1)
+                    with Import, Address => B_Addr;
+                  G_Pow : Byte_Seq (0 .. 511)
+                    with Import, Address => P_Addr;
+               begin
+                  G_Pow := Powers;
+                  G_Buf := Input;
+                  S_Store (16 .. 31) := S0;
+                  CB_Store (16 .. 31) := CB0;
+                  Call (G_Buf, G_Pow);
+                  Check (G_Buf = Main_Buf and S_Store (16 .. 31) = Main_S
+                         and CB_Store (16 .. 31) = Main_CB,
+                         K'Image & Bits'Image & ": guarded-page run differs");
+               end;
+            end loop;
+         end;
       end;
       Check (Storage = Expected, K'Image & Bits'Image &
              ": buffer differs from reference, trial" & Trial'Image);

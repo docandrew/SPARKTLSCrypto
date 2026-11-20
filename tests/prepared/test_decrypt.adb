@@ -16,7 +16,8 @@
 --      every AAD length 0 .. 300 with fixed ciphertext lengths;
 --    * lengths around the 16-, 64-, 256- and 512-byte stripe boundaries and
 --      the TLS record size, up to 64 KiB;
---    * 64 buffer alignments with guard bytes on both sides;
+--    * 64 buffer alignments with guard bytes on both sides, and buffer and
+--      AAD placed against PROT_NONE guard pages (reads outside fault too);
 --    * every single-bit flip of the tag, ciphertext and AAD of several
 --      records, equal flips at two tag positions, a wrong nonce and a
 --      wrong key: each must fail with the whole buffer zeroed;
@@ -35,6 +36,8 @@ with SPARKTLSCrypto.AES_GCM_AVX2;
 with SPARKTLSCrypto.AES_GCM_AVX512;
 with SPARKTLSCrypto.AES_GCM; use SPARKTLSCrypto.AES_GCM;
 with SPARKTLSCrypto.AES_GCM.Testing;
+with System.Storage_Elements;
+with Guarded_Memory;
 
 procedure Test_Decrypt is
    use type Interfaces.C.int;
@@ -351,6 +354,100 @@ procedure Test_Decrypt is
       Records := Records + 1;
    end Record_Case;
 
+   --  The same checks with the buffer and the AAD between PROT_NONE guard
+   --  pages (Guarded_Memory): placed to end exactly at the trailing guard
+   --  page, then to start right after the leading one. Any read or write
+   --  outside either object faults. Authentic decryption (prepared and
+   --  one-shot), encryption, and a forged record, on every tier.
+   use type System.Storage_Elements.Storage_Offset;
+   Buf_Region : constant Guarded_Memory.Region :=
+     Guarded_Memory.Allocate (65_536 + 64);
+   AAD_Region : constant Guarded_Memory.Region :=
+     Guarded_Memory.Allocate (512);
+   Guarded_Runs : Natural := 0;
+
+   procedure Guarded_Case (Bits : Positive; Len, AAD_Len : N32) is
+      Key   : Bytes_32;
+      Nonce : Bytes_12;
+      AAD_Store : Byte_Seq (0 .. AAD_Len) := (others => 0);
+      Plain, CT : Byte_Seq (0 .. I32 (Len) - 1);
+      CT_Store : Byte_Seq (0 .. Len) := (others => 0);
+      Tag   : Bytes_16;
+   begin
+      for I in Key'Range loop Key (I) := Next_Byte; end loop;
+      for I in Nonce'Range loop Nonce (I) := Next_Byte; end loop;
+      for I in AAD_Store'Range loop AAD_Store (I) := Next_Byte; end loop;
+      for I in Plain'Range loop Plain (I) := Next_Byte; end loop;
+      if Len > 0 then CT_Store (CT'Range) := Plain; end if;
+      Check (Seal (Key'Address, Interfaces.C.int (Bits), Nonce'Address,
+                   AAD_Store'Address, Interfaces.C.int (AAD_Len),
+                   CT_Store'Address, Interfaces.C.int (Len),
+                   Tag'Address) = 1, "OpenSSL seal");
+      CT := CT_Store (CT'Range);
+      for T in Tier loop
+         if Available (T) then
+            Select_Tier (T);
+            for At_End in Boolean loop
+               declare
+                  B_Addr : constant System.Address :=
+                    (if At_End
+                     then Guarded_Memory.At_End
+                       (Buf_Region, System.Storage_Elements.Storage_Offset (Len))
+                     else Guarded_Memory.At_Start (Buf_Region));
+                  A_Addr : constant System.Address :=
+                    (if At_End
+                     then Guarded_Memory.At_End
+                       (AAD_Region,
+                        System.Storage_Elements.Storage_Offset (AAD_Len))
+                     else Guarded_Memory.At_Start (AAD_Region));
+                  B : Byte_Seq (0 .. I32 (Len) - 1)
+                    with Import, Address => B_Addr;
+                  A : Byte_Seq (0 .. I32 (AAD_Len) - 1)
+                    with Import, Address => A_Addr;
+                  Context : Prepared_Key;
+                  Status  : Boolean;
+                  Our_Tag : Bytes_16;
+                  Bad     : Bytes_16 := Tag;
+               begin
+                  A := AAD_Store (A'Range);
+                  if Bits = 128 then
+                     Prepare_128 (Context, AES.Construct (Key (0 .. 15)));
+                  else
+                     Prepare_256 (Context, AES.Construct (Key));
+                  end if;
+                  B := CT;
+                  Decrypt_Prepared (B, Status, Tag, Nonce, Context, A);
+                  Check (Status and B = Plain, "guarded Decrypt_Prepared, tier "
+                         & T'Image & " len" & Len'Image);
+                  B := CT;
+                  if Bits = 128 then
+                     Decrypt_InPlace (B, Status, Tag, Nonce,
+                                      AES.Construct (Key (0 .. 15)), A);
+                  else
+                     Decrypt_InPlace_256 (B, Status, Tag, Nonce,
+                                          AES.Construct (Key), A);
+                  end if;
+                  Check (Status and B = Plain, "guarded Decrypt_InPlace, tier "
+                         & T'Image & " len" & Len'Image);
+                  if Len > 0 then
+                     Encrypt_Prepared (B, Our_Tag, Nonce, Context, A);
+                     Check (B = CT and Our_Tag = Tag, "guarded Encrypt_Prepared"
+                            & ", tier " & T'Image & " len" & Len'Image);
+                  end if;
+                  Bad (3) := Bad (3) xor 16#40#;
+                  B := CT;
+                  Decrypt_Prepared (B, Status, Bad, Nonce, Context, A);
+                  Check (not Status and B = Byte_Seq'(B'Range => 0),
+                         "guarded forgery, tier " & T'Image & " len" &
+                         Len'Image);
+                  Clear (Context);
+                  Guarded_Runs := Guarded_Runs + 1;
+               end;
+            end loop;
+         end if;
+      end loop;
+   end Guarded_Case;
+
    Boundaries : constant array (Positive range <>) of N32 :=
      (319, 320, 321, 383, 384, 385, 447, 448, 449, 511, 512, 513,
       767, 768, 769, 1023, 1024, 1025, 1279, 1280, 1281, 4095, 4096, 4097,
@@ -383,6 +480,12 @@ begin
          end loop;
          Record_Case (Bits, 300, 3, Flips => True);
          Record_Case (Bits, 527, 0, Flips => True);
+         for Len in N32 range 0 .. 300 loop
+            Guarded_Case (Bits, Len, (Len * 13) mod 301);
+         end loop;
+         for Len of Boundaries loop
+            Guarded_Case (Bits, Len, 300 - Len mod 7);
+         end loop;
       end;
    end loop;
    --  The IG 10.3.A self-test passes on every tier, and fails on every
@@ -418,6 +521,8 @@ begin
              " when a byte of a FAIL vector is (386)");
 
    Select_Tier (Tier'First);
+   Put_Line ("PASS: guarded-page records (buffer and AAD at a PROT_NONE" &
+             " page, both ends):" & Guarded_Runs'Image);
    Put_Line ("PASS: AES-GCM decrypt records" & Records'Image &
              ", forgeries" & Forgeries'Image & ", decryptions" &
              Decryptions'Image);

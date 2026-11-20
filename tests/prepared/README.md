@@ -14,7 +14,9 @@ headers and libcrypto are required for the independent oracle.
   CPU has, switching tiers in one process by overwriting the CPUID flags
   (test-only): every ciphertext length 0 .. 300 and AAD length 0 .. 300,
   lengths around the 16/64/256/512-byte stripes up to 64 KiB, 64 buffer
-  alignments with guard bytes, every single-bit flip of tag, ciphertext and
+  alignments with guard bytes, buffer and AAD against PROT_NONE guard pages
+  (`guarded_memory.ads`: ending at one, starting right after one) so that an
+  out-of-bounds read faults as well as a write, every single-bit flip of tag, ciphertext and
   AAD, equal flips at two tag positions, wrong nonce and key (all must fail
   with the buffer zeroed), and `Encrypt_Prepared` on every tier. It also
   runs `AES_GCM.Self_Test` on every tier and checks that altering any one of

@@ -20,5 +20,8 @@ pipelined, GHASH-only), against a block-at-a-time reference made of
 SPARKNaCl's software AES, an Ada inc32 and one GF(2^128) multiply per
 block. Both key sizes, every 64-byte alignment, zero/all-one hash keys,
 counters that wrap inside the stripe; guards around buffer, accumulator and
-counter, and immutable round keys and powers. Kernels the CPU lacks are
+counter, and immutable round keys and powers; every case is rerun with the
+buffer and the powers against PROT_NONE guard pages (both ends), so an
+out-of-bounds read faults (a mutant kernel with one extra 16-byte load past
+its stripe dies with SIGSEGV). Kernels the CPU lacks are
 reported as skipped.
