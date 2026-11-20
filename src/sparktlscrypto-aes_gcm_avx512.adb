@@ -2208,5 +2208,9 @@ is
    --  END GENERATED avx512 decrypt32 256
 
 begin
-   Has_AVX512_AES_GCM := (not SPARKTLSCrypto.CPU.Portable_Only) and then Detect_AVX512_AES_GCM;
+   --  The kernels also use VEX-encoded AVX2 instructions (vextracti128,
+   --  ymm vpxor in the horizontal reduction), so AVX2 is required too.
+   Has_AVX512_AES_GCM := (not SPARKTLSCrypto.CPU.Portable_Only)
+     and then SPARKTLSCrypto.CPU.Has_AVX2
+     and then Detect_AVX512_AES_GCM;
 end SPARKTLSCrypto.AES_GCM_AVX512;
