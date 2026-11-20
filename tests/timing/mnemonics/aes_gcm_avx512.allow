@@ -5,6 +5,7 @@ cmp
 cpuid
 jbe
 je
+jmp
 jne
 lea
 mov
