@@ -111,11 +111,11 @@ portable configurations, for encryption (`test_prepared`) and decryption
 (`test_decrypt`, every tier the CPU has). It requires OpenSSL headers and libcrypto, supplied by
 the development shell. The production library retains its Ada/assembly-only
 linkage. See `tests/prepared/README.md` for alignment, lifecycle, timing, and
-benchmark coverage. `ct_prepared`, `ct_decrypt_prepared` and its negative control
-`ct_decrypt_status_leak` are in the ctgrind lane; `dudect_aes_gcm_decrypt`
-(authentic vs forged tag, tag byte position, key classes, an A/A noise
-control and a branch-on-Status canary, on every tier) is in the dudect
-lane. `ci/kat.sh` runs the NIST CAVP GCM decryption vectors and Wycheproof's
+benchmark coverage. `ct_prepared`, `ct_decrypt_prepared` and its negative
+control `ct_decrypt_status_leak`, and `ct_mask_bytes` are in the ctgrind
+lane; `dudect_aes_gcm_decrypt` (authentic vs forged tag, tag byte position,
+key classes, an A/A noise control and a canary that masks only forged
+records, on every tier) is in the dudect lane. `ci/kat.sh` runs the NIST CAVP GCM decryption vectors and Wycheproof's
 AES-GCM vectors, and `ci/fuzz.sh` fuzzes decryption on the fastest tier
 against the portable path with forged records.
 
