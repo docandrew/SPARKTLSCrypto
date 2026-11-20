@@ -1043,7 +1043,11 @@ is
          end loop;
          Power := GF128_Mul (Power, H);
       end loop;
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
       SPARKNaCl.Sanitize (Byte_Seq (Power));
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
    end Compute_H_Powers_32;
 
    procedure Clear (Context : out Prepared_Key) is
@@ -1354,7 +1358,7 @@ is
    is
       A_Bits  : constant Unsigned_64 := Unsigned_64 (AAD_Len) * 8;
       C_Bits  : constant Unsigned_64 := Unsigned_64 (C_Len) * 8;
-      Lengths : Bytes_16;
+      Lengths : Bytes_16 := (others => 0);
    begin
       for I in 0 .. 7 loop
          Lengths (N32 (I)) :=
@@ -1399,8 +1403,12 @@ is
                Increment_Counter (J0);
                AES_CTR_256_InPlace (Buf, RK, J0);
             end if;
+            pragma Warnings (GNATprove, Off, "statement has no effect");
+            pragma Warnings (GNATprove, Off, "*is set by*");
             AES.Sanitize (RK);
             AES.Sanitize (K);
+            pragma Warnings (GNATprove, On, "*is set by*");
+            pragma Warnings (GNATprove, On, "statement has no effect");
          end;
       else
          declare
@@ -1417,14 +1425,22 @@ is
                Increment_Counter (J0);
                AES_CTR_128_InPlace (Buf, RK, J0);
             end if;
+            pragma Warnings (GNATprove, Off, "statement has no effect");
+            pragma Warnings (GNATprove, Off, "*is set by*");
             AES.Sanitize (RK);
             AES.Sanitize (K);
+            pragma Warnings (GNATprove, On, "*is set by*");
+            pragma Warnings (GNATprove, On, "statement has no effect");
          end;
       end if;
       GHASH_Lengths (S, H, N32 (AAD'Length), N32 (Buf'Length));
       Computed := S;
       XOR_Block (Computed, EJ0);
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
       SPARKNaCl.Sanitize (Byte_Seq (H));
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
    end Portable_Decrypt;
 
    --  The accelerated path: stitched stripes of 16 blocks (VAES on zmm or
@@ -1444,12 +1460,14 @@ is
       S      : Bytes_16 := (others => 0);
       CB     : Bytes_16 := (others => 0);
       EJ0    : Bytes_16;
-      Stream : Bytes_16 := (others => 0);
-      Block  : Bytes_16 := (others => 0);
+      Stream : Bytes_16;
+      Block  : Bytes_16;
       Pos    : N32 := 0;
       Count  : N32;
       Len    : constant N32 := N32 (Buf'Length);
-      Base   : constant N32 := Buf'First;
+      --  The bounds of an empty Buf need not lie in N32; Base is used only
+      --  when Buf is not empty.
+      Base   : constant N32 := (if Buf'Length = 0 then 0 else Buf'First);
    begin
       CB (0 .. 11) := N;
       CB (15) := 1;
@@ -1535,8 +1553,12 @@ is
       GHASH_Lengths (S, Context.H, N32 (AAD'Length), Len);
       Computed := S;
       XOR_Block (Computed, EJ0);
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
       SPARKNaCl.Sanitize (Byte_Seq (Stream));
       SPARKNaCl.Sanitize (Byte_Seq (Block));
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
    end Hardware_Decrypt;
 
    procedure Decrypt_Prepared
@@ -1568,7 +1590,11 @@ is
          Mask_Portable (Buf, Mask);
       end if;
       Status := Mask = 16#FF#;
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
       SPARKNaCl.Sanitize (Byte_Seq (Computed));
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
    end Decrypt_Prepared;
 
    procedure Decrypt_InPlace
@@ -1583,7 +1609,11 @@ is
    begin
       Prepare_128 (Context, K);
       Decrypt_Prepared (Buf, Status, Tag, N, Context, AAD);
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
       Clear (Context);
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
    end Decrypt_InPlace;
 
    procedure Decrypt_InPlace_256
@@ -1598,7 +1628,11 @@ is
    begin
       Prepare_256 (Context, K);
       Decrypt_Prepared (Buf, Status, Tag, N, Context, AAD);
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
       Clear (Context);
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
    end Decrypt_InPlace_256;
 
 end SPARKTLSCrypto.AES_GCM;
