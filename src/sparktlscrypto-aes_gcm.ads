@@ -215,7 +215,31 @@ is
                AAD'Length > 0 and then
                AAD'Last < N32'Last;
 
+   ----------------------------------------------------------------------------
+   --  Cryptographic algorithm self-test (FIPS 140-3 IG 10.3.A)
+   ----------------------------------------------------------------------------
+   --  Known-answer test of AES-GCM encryption and decryption, AES-128 and
+   --  AES-256, through Prepare_128/256, Encrypt_Prepared and
+   --  Decrypt_Prepared, so on whichever tier this CPU will use. IG 10.3.A
+   --  resolution 1.a and 1.b require the encryption and the decryption
+   --  function each to be self-tested; 1.d requires a test of an
+   --  authenticated mode. Vectors: NIST CAVP gcmEncryptExtIV128/256.rsp
+   --  and gcmDecrypt128/256.rsp (one FAIL vector each), plus an 851-byte
+   --  record that reaches every stripe kernel. A forged tag and the CAVP
+   --  FAIL vectors must be rejected with the buffer zeroed. OK is True iff
+   --  every check passed. To run before the first use of AES-GCM (the
+   --  caller's self-test sequence, e.g. SPARKTLS.Self_Tests).
+   --
+   --  A procedure, not a function: the prepared paths are not annotated
+   --  Always_Terminates, which a function's callees would need to be.
+   procedure Self_Test (OK : out Boolean);
+
 private
+   --  Self_Test with byte Flip of the known-answer data inverted in its
+   --  lowest bit (no change when Flip is past the data): the tests use it
+   --  to show that every byte of every vector is checked.
+   procedure Self_Test_With (Flip : in N32; OK : out Boolean);
+
    type Prepared_Key is record
       Ready    : Boolean := False;
       Is_256   : Boolean := False;

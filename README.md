@@ -55,6 +55,12 @@ present without CPUID so memcheck's taint tracking runs the assembly
 without the instructions and is for the test lanes only.
 `CTGRIND_PORTABLE=1` runs the lane on the portable path instead.
 
+`AES_GCM.Self_Test` is the FIPS 140-3 cryptographic algorithm self-test
+for AES-GCM (IG 10.3.A): NIST CAVP known answers for encryption and
+decryption, AES-128 and AES-256, through the prepared paths on the tier
+this CPU will use, with forged records that must be rejected and zeroed.
+A caller runs it before the first use of AES-GCM.
+
 ## Build
 
 Use Alire to build the library:

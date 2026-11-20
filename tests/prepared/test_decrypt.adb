@@ -34,6 +34,7 @@ with SPARKTLSCrypto.GHASH_NI;
 with SPARKTLSCrypto.AES_GCM_AVX2;
 with SPARKTLSCrypto.AES_GCM_AVX512;
 with SPARKTLSCrypto.AES_GCM; use SPARKTLSCrypto.AES_GCM;
+with SPARKTLSCrypto.AES_GCM.Testing;
 
 procedure Test_Decrypt is
    use type Interfaces.C.int;
@@ -384,6 +385,38 @@ begin
          Record_Case (Bits, 527, 0, Flips => True);
       end;
    end loop;
+   --  The IG 10.3.A self-test passes on every tier, and fails on every
+   --  tier when any single byte of its known answers is altered. Altering
+   --  a byte of a CAVP FAIL vector gives another forgery: still rejected,
+   --  so the self-test still passes.
+   for T in Tier loop
+      if Available (T) then
+         Select_Tier (T);
+         declare
+            OK : Boolean;
+         begin
+            Self_Test (OK);
+            Check (OK, "self-test fails on tier " & T'Image);
+            for Flip in N32 range 0 .. SPARKTLSCrypto.AES_GCM.Testing.KAT_Bytes - 1 loop
+               SPARKTLSCrypto.AES_GCM.Testing.Self_Test_Altered (Flip, OK);
+               if SPARKTLSCrypto.AES_GCM.Testing.Fail_Vector_Byte (Flip) then
+                  Check (OK, "self-test fails with FAIL-vector byte" &
+                         Flip'Image & " altered, tier " & T'Image);
+               else
+                  Check (not OK, "self-test passes with known-answer byte" &
+                         Flip'Image & " altered, tier " & T'Image);
+               end if;
+            end loop;
+            SPARKTLSCrypto.AES_GCM.Testing.Self_Test_Altered
+              (SPARKTLSCrypto.AES_GCM.Testing.KAT_Bytes, OK);
+            Check (OK, "self-test fails with nothing altered");
+         end;
+      end if;
+   end loop;
+   Put_Line ("PASS: AES-GCM self-test on every tier; it fails when any" &
+             " known-answer byte is altered (520 of 906), and still passes" &
+             " when a byte of a FAIL vector is (386)");
+
    Select_Tier (Tier'First);
    Put_Line ("PASS: AES-GCM decrypt records" & Records'Image &
              ", forgeries" & Forgeries'Image & ", decryptions" &

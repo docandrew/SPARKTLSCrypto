@@ -16,7 +16,10 @@ headers and libcrypto are required for the independent oracle.
   lengths around the 16/64/256/512-byte stripes up to 64 KiB, 64 buffer
   alignments with guard bytes, every single-bit flip of tag, ciphertext and
   AAD, equal flips at two tag positions, wrong nonce and key (all must fail
-  with the buffer zeroed), and `Encrypt_Prepared` on every tier.
+  with the buffer zeroed), and `Encrypt_Prepared` on every tier. It also
+  runs `AES_GCM.Self_Test` on every tier and checks that altering any one of
+  its known-answer bytes makes it fail (bytes of its CAVP FAIL vectors
+  excepted: altered, they are still forgeries and must still be rejected).
 - `bin/bench_prepared` has two sections. `prepared` interleaves one-shot and
   cached encryption. `aead` times SPARKTLSCrypto encryption and decryption
   against OpenSSL EVP with a cached key schedule (the key is set once, each
