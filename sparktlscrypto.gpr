@@ -82,6 +82,8 @@ project SPARKTLSCrypto is
    AES_NI_Switches := ("-maes", "-mpclmul", "-mssse3");
    ADX_Switches    := ("-mbmi2", "-madx");
    AVX2_Switches   := ("-mavx2");
+   VAES_AVX2_Switches := ("-mavx2", "-maes", "-mpclmul", "-mvaes",
+                          "-mvpclmulqdq");
    AVX512_Switches := ("-mavx512f", "-mavx512dq", "-mavx512bw",
                        "-mavx512vl", "-mavx512ifma", "-mvaes",
                        "-mvpclmulqdq");
@@ -162,6 +164,15 @@ project SPARKTLSCrypto is
         Compile_Checks_Switches &
         Build_Switches &
         AES_NI_Switches &
+        Runtime_Checks_Switches &
+        Style_Checks_Switches &
+        Contracts_Switches &
+        ("-gnatw.X", "-gnat2022", "-gnatQ");
+
+      for Switches ("sparktlscrypto-aes_gcm_avx2.adb") use
+        Compile_Checks_Switches &
+        Build_Switches &
+        VAES_AVX2_Switches &
         Runtime_Checks_Switches &
         Style_Checks_Switches &
         Contracts_Switches &

@@ -5,5 +5,9 @@ package body SPARKTLSCrypto.AES_GCM.Testing is
       and Context.Rounds = Byte_Seq'(0 .. 239 => 0)
       and Context.H = Bytes_16'(others => 0)
       and Context.Powers_4 = Byte_Seq'(0 .. 63 => 0)
-      and Context.Powers_16 = Byte_Seq'(0 .. 255 => 0));
+      and Context.Powers_32 = Byte_Seq'(0 .. 511 => 0));
+   procedure Self_Test_Altered (Flip : N32; OK : out Boolean) is
+   begin
+      Self_Test_With (Flip, OK);
+   end Self_Test_Altered;
 end SPARKTLSCrypto.AES_GCM.Testing;

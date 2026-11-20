@@ -11,7 +11,11 @@ project Field25519 is
       for Default_Switches ("Ada") use ("-O3", "-g", "-gnat2022", "-gnata");
       for Default_Switches ("C") use ("-O2", "-g", "-Wall", "-Wextra", "-Werror");
    end Compiler;
+   --  The libcrypto to link and run against (the Nix shell exports the
+   --  flake's; elsewhere the system one), as in tests/prepared.
+   OpenSSL_Lib := External ("SPARKTLSCRYPTO_OPENSSL_LIB", "/usr/lib");
    package Linker is
-      for Default_Switches ("Ada") use ("-lcrypto");
+      for Default_Switches ("Ada") use
+        ("-L" & OpenSSL_Lib, "-Wl,-rpath," & OpenSSL_Lib, "-lcrypto");
    end Linker;
 end Field25519;

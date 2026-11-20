@@ -13,8 +13,9 @@ for tier in enabled disabled; do
     SPARKTLSCRYPTO_RUNTIME_CHECKS=enabled \
     SPARKTLSCRYPTO_CONTRACTS=enabled \
         alr -n --no-tty exec -- gprbuild -s -P tests/prepared/prepared.gpr \
-            test_prepared.adb -j"${JOBS:-0}"
+            test_prepared.adb test_decrypt.adb -j"${JOBS:-0}"
     tests/prepared/bin/test_prepared
+    tests/prepared/bin/test_decrypt
 done
 
 # Restore the caller's configuration before subsequent CI lanes. Without -s,

@@ -5,6 +5,7 @@ cmp
 cpuid
 jbe
 je
+jmp
 jne
 lea
 mov
@@ -22,6 +23,7 @@ sub
 test
 vaesenc
 vaesenclast
+vbroadcasti32x4
 vbroadcasti64x2
 vextracti128
 vextracti64x4

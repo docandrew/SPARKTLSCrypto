@@ -8,6 +8,7 @@ export ALR_NON_INTERACTIVE=1
 export NO_COLOR=1
 
 ci/versions.sh
+python3 tools/generate_gcm_kernels.py --check
 ci/build.sh
 ci/smoke.sh
 ci/prepared.sh

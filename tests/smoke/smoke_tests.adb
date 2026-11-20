@@ -644,6 +644,12 @@ procedure Smoke_Tests is
       OK  : Boolean;
    begin
       Check ("HMAC_DRBG self-test (CAVP vector)", Self_Test);
+      declare
+         GCM_OK : Boolean;
+      begin
+         SPARKTLSCrypto.AES_GCM.Self_Test (GCM_OK);
+         Check ("AES-GCM self-test (CAVP vectors, prepared paths)", GCM_OK);
+      end;
       Instantiate (S, E, Nn, Emp, Reseed_Interval => 1);
       Generate (S, Emp, Buf, OK);
       Check ("HMAC_DRBG first request after seeding", OK);

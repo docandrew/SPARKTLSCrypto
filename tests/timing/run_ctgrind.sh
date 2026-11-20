@@ -140,6 +140,14 @@ run_one ct_hkdf              clean || fail=1
 run_one ct_prepared clean || fail=1
 run_one ct_aes_gcm           clean || fail=1
 run_one ct_aead_decrypt      clean || fail=1
+#  AES-GCM Decrypt_Prepared / Decrypt_InPlace: key, nonce, AAD, ciphertext
+#  and tag all secret; every tier Valgrind's CPU exposes. Its negative
+#  control branches on the undeclassified Status and on a plaintext byte.
+run_one ct_decrypt_status_leak canary || fail=1
+run_one ct_decrypt_prepared  clean || fail=1
+#  Both masking loops called directly, tainted mask: the AVX2 one is
+#  otherwise never run under Valgrind (no VAES), but uses only AVX2.
+run_one ct_mask_bytes        clean || fail=1
 run_one ct_rfc6979           clean || fail=1
 run_one ct_hmac              clean || fail=1
 run_one ct_rsa_sign_plain    clean || fail=1

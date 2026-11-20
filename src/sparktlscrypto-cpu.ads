@@ -27,9 +27,10 @@ is
    --  adcx/adox), both present, and not Portable_Only.
    Has_BMI2_ADX : Boolean := False with Constant_After_Elaboration;
 
-   --  CPUID.(EAX=07H,ECX=0):EBX bit 5 (AVX2), with the OS having enabled
-   --  YMM state (CPUID.01H:ECX bit 27 OSXSAVE and XGETBV(0) bits 1..2),
-   --  and not Portable_Only. Used by the fixed-base table gather.
+   --  CPUID.(EAX=07H,ECX=0):EBX bit 5 (AVX2) and CPUID.01H:ECX bit 28
+   --  (AVX), with the OS having enabled YMM state (CPUID.01H:ECX bit 27
+   --  OSXSAVE and XGETBV(0) bits 1..2), and not Portable_Only. Used by the
+   --  fixed-base table gather and the VAES AES-GCM tiers.
    Has_AVX2 : Boolean := False with Constant_After_Elaboration;
 
 end SPARKTLSCrypto.CPU;

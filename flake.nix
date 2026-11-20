@@ -49,6 +49,12 @@
 
             shellHook = ''
               export C_INCLUDE_PATH="${pkgs.valgrind.dev}/include''${C_INCLUDE_PATH:+:$C_INCLUDE_PATH}"
+              # The OpenSSL oracle of tests/prepared is compiled by Alire's
+              # GCC, which does not see the Nix compiler wrapper's flags:
+              # give it this OpenSSL's headers, and tests/prepared/prepared.gpr
+              # links and sets the run path from SPARKTLSCRYPTO_OPENSSL_LIB.
+              export C_INCLUDE_PATH="${pkgs.openssl.dev}/include:$C_INCLUDE_PATH"
+              export SPARKTLSCRYPTO_OPENSSL_LIB="${pkgs.openssl.out}/lib"
               export HACL_STAR_SRC="${hacl-star}"
               echo "SPARKTLSCrypto dev shell: use ci/check.sh for the reproducible CI lane."
             '';

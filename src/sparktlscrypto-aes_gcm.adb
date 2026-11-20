@@ -2,6 +2,7 @@ with Interfaces; use Interfaces;
 with SPARKTLSCrypto.AES_Dispatch;
 with SPARKTLSCrypto.AES_NI;
 with SPARKTLSCrypto.AES_GCM_AVX512;
+with SPARKTLSCrypto.AES_GCM_AVX2;
 with SPARKTLSCrypto.GHASH_Dispatch;
 with SPARKTLSCrypto.GHASH_NI;
 
@@ -1025,13 +1026,37 @@ is
    end Verify_Empty_Ciphertext_256;
 
 
+   --  H^32 .. H^1, each byte-reversed, descending, 16 bytes apiece: the
+   --  table the VAES stripe kernels read (AES_GCM_AVX512.Pre_H_Powers_32;
+   --  its last 256 bytes are the sixteen-power Pre_H_Powers_16 table).
+   --  The loop runs a fixed 32 times, one multiply each; the last
+   --  product is unused.
+   procedure Compute_H_Powers_32 (H : in Bytes_16; Powers : out Byte_Seq)
+   with Pre => Powers'First = 0 and Powers'Last = 511
+   is
+      Power : Bytes_16 := H;
+   begin
+      Powers := (others => 0);
+      for K in reverse N32 range 0 .. 31 loop
+         for I in N32 range 0 .. 15 loop
+            Powers (16 * K + I) := Power (15 - I);
+         end loop;
+         Power := GF128_Mul (Power, H);
+      end loop;
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
+      SPARKNaCl.Sanitize (Byte_Seq (Power));
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
+   end Compute_H_Powers_32;
+
    procedure Clear (Context : out Prepared_Key) is
    begin
       SPARKNaCl.Sanitize (Byte_Seq (Context.Raw_Key));
       SPARKNaCl.Sanitize (Context.Rounds);
       SPARKNaCl.Sanitize (Byte_Seq (Context.H));
       SPARKNaCl.Sanitize (Context.Powers_4);
-      SPARKNaCl.Sanitize (Context.Powers_16);
+      SPARKNaCl.Sanitize (Context.Powers_32);
       Context.Ready := False;
       Context.Is_256 := False;
       Context.Hardware := False;
@@ -1054,9 +1079,10 @@ is
             AES.Sanitize (RK);
          end;
          GHASH_NI.Compute_H_Powers (Context.H, Context.Powers_4);
-         if AES_GCM_AVX512.Has_AVX512_AES_GCM then
-            AES_GCM_AVX512.Compute_H_Powers_16
-              (Context.H, Context.Powers_16);
+         if AES_GCM_AVX512.Has_AVX512_AES_GCM
+           or AES_GCM_AVX2.Has_VAES_AVX2
+         then
+            Compute_H_Powers_32 (Context.H, Context.Powers_32);
          end if;
       end if;
       Context.Ready := True;
@@ -1080,9 +1106,10 @@ is
             AES.Sanitize (RK);
          end;
          GHASH_NI.Compute_H_Powers (Context.H, Context.Powers_4);
-         if AES_GCM_AVX512.Has_AVX512_AES_GCM then
-            AES_GCM_AVX512.Compute_H_Powers_16
-              (Context.H, Context.Powers_16);
+         if AES_GCM_AVX512.Has_AVX512_AES_GCM
+           or AES_GCM_AVX2.Has_VAES_AVX2
+         then
+            Compute_H_Powers_32 (Context.H, Context.Powers_32);
          end if;
       end if;
       Context.Ready := True;
@@ -1181,14 +1208,43 @@ is
             if Context.Is_256 then
                AES_GCM_AVX512.Encrypt_GCM_Stripe_16_256
                  (Buf (Base + Pos .. Base + Pos + 255), S, Ctr_256,
-                  Context.Rounds, Context.Powers_16);
+                  Context.Rounds, Context.Powers_32 (256 .. 511));
             else
                AES_GCM_AVX512.Encrypt_GCM_Stripe_16_128
                  (Buf (Base + Pos .. Base + Pos + 255), S, Ctr_256,
-                  Context.Rounds (0 .. 175), Context.Powers_16);
+                  Context.Rounds (0 .. 175), Context.Powers_32 (256 .. 511));
             end if;
             Pos := Pos + 256;
          end loop;
+      elsif AES_GCM_AVX2.Has_VAES_AVX2 and then Len >= 256 then
+         --  VAES on ymm, sixteen blocks per stripe, pipelined like the
+         --  AES-NI path below: encrypt stripe k while authenticating the
+         --  ciphertext of stripe k-1, then authenticate the last stripe.
+         if Context.Is_256 then
+            AES_GCM_AVX2.Encrypt_CTR_16_256
+              (Buf (Base .. Base + 255), CB, Context.Rounds);
+         else
+            AES_GCM_AVX2.Encrypt_CTR_16_128
+              (Buf (Base .. Base + 255), CB, Context.Rounds (0 .. 175));
+         end if;
+         Pos := 256;
+         while Len - Pos >= 256 loop
+            pragma Loop_Invariant
+              (Pos >= 256 and Pos <= Len and Pos mod 256 = 0);
+            if Context.Is_256 then
+               AES_GCM_AVX2.Encrypt_GHASH_Pipelined_16_256
+                 (Buf (Base + Pos - 256 .. Base + Pos + 255), S, CB,
+                  Context.Rounds, Context.Powers_32 (256 .. 511));
+            else
+               AES_GCM_AVX2.Encrypt_GHASH_Pipelined_16_128
+                 (Buf (Base + Pos - 256 .. Base + Pos + 255), S, CB,
+                  Context.Rounds (0 .. 175), Context.Powers_32 (256 .. 511));
+            end if;
+            Pos := Pos + 256;
+         end loop;
+         AES_GCM_AVX2.GHASH_16_Blocks
+           (Buf (Base + Pos - 256 .. Base + Pos - 1), S,
+            Context.Powers_32 (256 .. 511));
       elsif Len >= 128 then
          --  Keep the existing AES-NI pipeline: encrypt stripe k while
          --  authenticating stripe k-1. Only key preparation is hoisted.
@@ -1257,5 +1313,649 @@ is
       XOR_Block (Tag, EJ0);
       SPARKNaCl.Sanitize (Byte_Seq (Stream));
    end Encrypt_Prepared;
+
+   ----------------------------------------------------------------------------
+   --  Prepared decryption
+   ----------------------------------------------------------------------------
+   --  Both paths compute the expected tag over the ciphertext and decrypt
+   --  Buf in place; Decrypt_Prepared then compares the tags and masks the
+   --  whole buffer, the same way on every path and for every outcome.
+
+   --  16#FF# if A = B, else 0, with no branch or early exit: the byte
+   --  differences are OR-ed over all 16 positions, and D - 1 borrows into
+   --  bit 8 exactly when D = 0.
+   function Tag_Mask (A, B : Bytes_16) return Byte
+   with Post => (if A = B then Tag_Mask'Result = 16#FF#
+                 else Tag_Mask'Result = 0)
+   is
+      D : Byte := 0;
+   begin
+      for I in A'Range loop
+         D := D or (A (I) xor B (I));
+         pragma Loop_Invariant
+           ((D = 0) = (for all J in A'First .. I => A (J) = B (J)));
+      end loop;
+      pragma Assert ((D = 0) = (A = B));
+      return Byte (Shift_Right (Unsigned_32 (D) - 1, 8) and 16#FF#);
+   end Tag_Mask;
+
+   --  Portable counterpart of AES_NI.Mask_Bytes.
+   procedure Mask_Portable (Buf : in out Byte_Seq; Mask : in Byte)
+   with Pre  => Mask = 0 or Mask = 16#FF#,
+        Post => (if Mask = 0 then (for all I in Buf'Range => Buf (I) = 0))
+   is
+   begin
+      for I in Buf'Range loop
+         Buf (I) := Buf (I) and Mask;
+         pragma Loop_Invariant
+           (if Mask = 0 then (for all J in Buf'First .. I => Buf (J) = 0));
+      end loop;
+   end Mask_Portable;
+
+   --  GHASH of the length block len(A) || len(C), in bits, closing S.
+   procedure GHASH_Lengths
+     (S : in out Bytes_16; H : in Bytes_16; AAD_Len, C_Len : in N32)
+   is
+      A_Bits  : constant Unsigned_64 := Unsigned_64 (AAD_Len) * 8;
+      C_Bits  : constant Unsigned_64 := Unsigned_64 (C_Len) * 8;
+      Lengths : Bytes_16 := (others => 0);
+   begin
+      for I in 0 .. 7 loop
+         Lengths (N32 (I)) :=
+           Byte (Shift_Right (A_Bits, (7 - I) * 8) and 16#FF#);
+         Lengths (N32 (8 + I)) :=
+           Byte (Shift_Right (C_Bits, (7 - I) * 8) and 16#FF#);
+      end loop;
+      XOR_Block (S, Lengths);
+      S := GF128_Mul (S, H);
+   end GHASH_Lengths;
+
+   --  The proven portable path: the one-shot building blocks (software AES
+   --  and GHASH when the CPU lacks AES-NI or PCLMULQDQ, or in a
+   --  SPARKTLSCRYPTO_ASM=disabled build), GHASH before CTR.
+   procedure Portable_Decrypt
+     (Buf      : in out Byte_Seq;
+      Computed :    out Bytes_16;
+      N        : in     Bytes_12;
+      Context  : in     Prepared_Key;
+      AAD      : in     Byte_Seq)
+   with Pre => AAD'First = 0 and Buf'Last < N32'Last and AAD'Last < N32'Last
+   is
+      J0  : Bytes_16 := (others => 0);
+      H   : Bytes_16;
+      EJ0 : Bytes_16;
+      S   : Bytes_16 := (others => 0);
+   begin
+      J0 (0 .. 11) := N;
+      J0 (15) := 16#01#;
+      if Context.Is_256 then
+         declare
+            K  : AES.AES256_Key := AES.Construct (Context.Raw_Key);
+            RK : AES.AES256_Round_Keys := AES.Key_Expansion (K);
+         begin
+            HW_AES.Cipher (H, Bytes_16'(others => 0), RK);
+            HW_AES.Cipher (EJ0, J0, RK);
+            if AAD'Length > 0 then
+               GHASH_Bytes (S, H, AAD);
+            end if;
+            if Buf'Length > 0 then
+               GHASH_Bytes (S, H, Buf);
+               Increment_Counter (J0);
+               AES_CTR_256_InPlace (Buf, RK, J0);
+            end if;
+            pragma Warnings (GNATprove, Off, "statement has no effect");
+            pragma Warnings (GNATprove, Off, "*is set by*");
+            AES.Sanitize (RK);
+            AES.Sanitize (K);
+            pragma Warnings (GNATprove, On, "*is set by*");
+            pragma Warnings (GNATprove, On, "statement has no effect");
+         end;
+      else
+         declare
+            K  : AES.AES128_Key := AES.Construct (Context.Raw_Key (0 .. 15));
+            RK : AES.AES128_Round_Keys := AES.Key_Expansion (K);
+         begin
+            HW_AES.Cipher (H, Bytes_16'(others => 0), RK);
+            HW_AES.Cipher (EJ0, J0, RK);
+            if AAD'Length > 0 then
+               GHASH_Bytes (S, H, AAD);
+            end if;
+            if Buf'Length > 0 then
+               GHASH_Bytes (S, H, Buf);
+               Increment_Counter (J0);
+               AES_CTR_128_InPlace (Buf, RK, J0);
+            end if;
+            pragma Warnings (GNATprove, Off, "statement has no effect");
+            pragma Warnings (GNATprove, Off, "*is set by*");
+            AES.Sanitize (RK);
+            AES.Sanitize (K);
+            pragma Warnings (GNATprove, On, "*is set by*");
+            pragma Warnings (GNATprove, On, "statement has no effect");
+         end;
+      end if;
+      GHASH_Lengths (S, H, N32 (AAD'Length), N32 (Buf'Length));
+      Computed := S;
+      XOR_Block (Computed, EJ0);
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
+      SPARKNaCl.Sanitize (Byte_Seq (H));
+      --  S xor EJ0 is the expected tag: wipe both, as Decrypt_Prepared
+      --  wipes Computed.
+      SPARKNaCl.Sanitize (Byte_Seq (S));
+      SPARKNaCl.Sanitize (Byte_Seq (EJ0));
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
+   end Portable_Decrypt;
+
+   --  The accelerated path: stitched stripes of 16 blocks (VAES on zmm or
+   --  ymm), then 4 blocks (AES-NI), then single blocks. Every stripe
+   --  GHASHes its ciphertext before overwriting it, so the tag covers the
+   --  ciphertext as received.
+   procedure Hardware_Decrypt
+     (Buf      : in out Byte_Seq;
+      Computed :    out Bytes_16;
+      N        : in     Bytes_12;
+      Context  : in     Prepared_Key;
+      AAD      : in     Byte_Seq)
+   with Pre => Context.Ready and Context.Hardware
+               and AAD'First = 0 and Buf'Last < N32'Last
+               and AAD'Last < N32'Last
+   is
+      S      : Bytes_16 := (others => 0);
+      CB     : Bytes_16 := (others => 0);
+      EJ0    : Bytes_16;
+      Stream : Bytes_16;
+      Block  : Bytes_16;
+      Pos    : N32 := 0;
+      Count  : N32;
+      Len    : constant N32 := N32 (Buf'Length);
+      --  The bounds of an empty Buf need not lie in N32; Base is used only
+      --  when Buf is not empty.
+      Base   : constant N32 := (if Buf'Length = 0 then 0 else Buf'First);
+   begin
+      CB (0 .. 11) := N;
+      CB (15) := 1;
+      Prepared_Cipher (EJ0, CB, Context);
+      Increment_Counter (CB);
+      Prepared_GHASH (S, Context, AAD);
+
+      if AES_GCM_AVX512.Has_AVX512_AES_GCM then
+         while Len - Pos >= 512 loop
+            pragma Loop_Invariant (Pos <= Len);
+            if Context.Is_256 then
+               AES_GCM_AVX512.Decrypt_GCM_Stripe_32_256
+                 (Buf (Base + Pos .. Base + Pos + 511), S, CB,
+                  Context.Rounds, Context.Powers_32);
+            else
+               AES_GCM_AVX512.Decrypt_GCM_Stripe_32_128
+                 (Buf (Base + Pos .. Base + Pos + 511), S, CB,
+                  Context.Rounds (0 .. 175), Context.Powers_32);
+            end if;
+            Pos := Pos + 512;
+         end loop;
+         while Len - Pos >= 256 loop
+            pragma Loop_Invariant (Pos <= Len);
+            if Context.Is_256 then
+               AES_GCM_AVX512.Decrypt_GCM_Stripe_16_256
+                 (Buf (Base + Pos .. Base + Pos + 255), S, CB,
+                  Context.Rounds, Context.Powers_32 (256 .. 511));
+            else
+               AES_GCM_AVX512.Decrypt_GCM_Stripe_16_128
+                 (Buf (Base + Pos .. Base + Pos + 255), S, CB,
+                  Context.Rounds (0 .. 175), Context.Powers_32 (256 .. 511));
+            end if;
+            Pos := Pos + 256;
+         end loop;
+      elsif AES_GCM_AVX2.Has_VAES_AVX2 then
+         while Len - Pos >= 256 loop
+            pragma Loop_Invariant (Pos <= Len);
+            if Context.Is_256 then
+               AES_GCM_AVX2.Decrypt_GCM_Stripe_16_256
+                 (Buf (Base + Pos .. Base + Pos + 255), S, CB,
+                  Context.Rounds, Context.Powers_32 (256 .. 511));
+            else
+               AES_GCM_AVX2.Decrypt_GCM_Stripe_16_128
+                 (Buf (Base + Pos .. Base + Pos + 255), S, CB,
+                  Context.Rounds (0 .. 175), Context.Powers_32 (256 .. 511));
+            end if;
+            Pos := Pos + 256;
+         end loop;
+      end if;
+
+      while Len - Pos >= 64 loop
+         pragma Loop_Invariant (Pos <= Len);
+         if Context.Is_256 then
+            AES_NI.Decrypt_GCM_Stripe_4_256
+              (Buf (Base + Pos .. Base + Pos + 63), S, CB,
+               Context.Rounds, Context.Powers_4);
+         else
+            AES_NI.Decrypt_GCM_Stripe_4_128
+              (Buf (Base + Pos .. Base + Pos + 63), S, CB,
+               Context.Rounds (0 .. 175), Context.Powers_4);
+         end if;
+         Pos := Pos + 64;
+      end loop;
+
+      --  At most three full blocks and one partial block remain. Each is
+      --  GHASHed (zero-padded) before it is decrypted.
+      while Pos < Len loop
+         pragma Loop_Invariant (Pos < Len);
+         Count := N32'Min (16, Len - Pos);
+         Block := (others => 0);
+         Block (0 .. Count - 1) :=
+           Buf (Base + Pos .. Base + Pos + Count - 1);
+         XOR_Block (S, Block);
+         S := GF128_Mul (S, Context.H);
+         Prepared_Cipher (Stream, CB, Context);
+         Increment_Counter (CB);
+         for I in N32 range 0 .. Count - 1 loop
+            Buf (Base + Pos + I) := Buf (Base + Pos + I) xor Stream (I);
+         end loop;
+         Pos := Pos + Count;
+      end loop;
+
+      GHASH_Lengths (S, Context.H, N32 (AAD'Length), Len);
+      Computed := S;
+      XOR_Block (Computed, EJ0);
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
+      SPARKNaCl.Sanitize (Byte_Seq (Stream));
+      SPARKNaCl.Sanitize (Byte_Seq (Block));
+      --  S xor EJ0 is the expected tag: wipe both, as Decrypt_Prepared
+      --  wipes Computed.
+      SPARKNaCl.Sanitize (Byte_Seq (S));
+      SPARKNaCl.Sanitize (Byte_Seq (EJ0));
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
+   end Hardware_Decrypt;
+
+   procedure Decrypt_Prepared
+     (Buf     : in out Byte_Seq;
+      Status  :    out Boolean;
+      Tag     : in     Bytes_16;
+      N       : in     Bytes_12;
+      Context : in     Prepared_Key;
+      AAD     : in     Byte_Seq)
+   is
+      Computed : Bytes_16;
+      Mask     : Byte;
+   begin
+      --  Context.Hardware is fixed at preparation from CPUID: public.
+      if Context.Hardware then
+         Hardware_Decrypt (Buf, Computed, N, Context, AAD);
+      else
+         Portable_Decrypt (Buf, Computed, N, Context, AAD);
+      end if;
+
+      --  Release the plaintext or zeros: one pass over the whole buffer
+      --  either way, no branch on the comparison.
+      Mask := Tag_Mask (Computed, Tag);
+      if Context.Hardware and AES_GCM_AVX2.Has_VAES_AVX2 then
+         AES_GCM_AVX2.Mask_Bytes (Buf, Mask);
+      elsif Context.Hardware then
+         AES_NI.Mask_Bytes (Buf, Mask);
+      else
+         Mask_Portable (Buf, Mask);
+      end if;
+      Status := Mask = 16#FF#;
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
+      SPARKNaCl.Sanitize (Byte_Seq (Computed));
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
+   end Decrypt_Prepared;
+
+   procedure Decrypt_InPlace
+     (Buf    : in out Byte_Seq;
+      Status :    out Boolean;
+      Tag    : in     Bytes_16;
+      N      : in     Bytes_12;
+      K      : in     AES.AES128_Key;
+      AAD    : in     Byte_Seq)
+   is
+      Context : Prepared_Key;
+   begin
+      Prepare_128 (Context, K);
+      Decrypt_Prepared (Buf, Status, Tag, N, Context, AAD);
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
+      Clear (Context);
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
+   end Decrypt_InPlace;
+
+   procedure Decrypt_InPlace_256
+     (Buf    : in out Byte_Seq;
+      Status :    out Boolean;
+      Tag    : in     Bytes_16;
+      N      : in     Bytes_12;
+      K      : in     AES.AES256_Key;
+      AAD    : in     Byte_Seq)
+   is
+      Context : Prepared_Key;
+   begin
+      Prepare_256 (Context, K);
+      Decrypt_Prepared (Buf, Status, Tag, N, Context, AAD);
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
+      Clear (Context);
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
+   end Decrypt_InPlace_256;
+
+   ----------------------------------------------------------------------------
+   --  Cryptographic algorithm self-test (FIPS 140-3 IG 10.3.A)
+   ----------------------------------------------------------------------------
+   --  Known answers from the NIST CAVP GCM vectors (gcmtestvectors.zip,
+   --  https://csrc.nist.gov/projects/cryptographic-algorithm-validation-
+   --  program/cavp-testing-block-cipher-modes), one encryption vector and
+   --  one FAIL decryption vector per key size, plus the tag of one longer
+   --  record under each encryption vector's key, IV and AAD. The CAVP
+   --  records (51 bytes) never reach a stripe kernel; the 851-byte record
+   --  passes through every stripe width of every tier (32/16/4 blocks, a
+   --  full and a partial tail block) so the test exercises the code that
+   --  will run. Its tags were computed with an independent implementation
+   --  (pyca/cryptography over OpenSSL) and agree with the portable path.
+   --  Every field is one slice of KAT_Data; Self_Test_With can flip any
+   --  byte of it, which the tests use to show that each one matters.
+
+   KAT_Last : constant := 905;
+   subtype KAT_Index is N32 range 0 .. KAT_Last;
+   subtype KAT_Image is Byte_Seq (KAT_Index);
+
+   KAT_Data : constant KAT_Image :=
+     (
+      --  AES-128 gcmEncryptExtIV128.rsp [IVlen = 96] [PTlen = 408] [AADlen = 720] [Taglen = 128] Count = 0: Key (16 bytes, offset 0)
+      16#2C#, 16#1F#, 16#21#, 16#CF#, 16#0F#, 16#6F#, 16#B3#, 16#66#,
+      16#19#, 16#43#, 16#15#, 16#5C#, 16#3E#, 16#3D#, 16#84#, 16#92#,
+      --  AES-128 gcmEncryptExtIV128.rsp [IVlen = 96] [PTlen = 408] [AADlen = 720] [Taglen = 128] Count = 0: IV (12 bytes, offset 16)
+      16#23#, 16#CB#, 16#5F#, 16#F3#, 16#62#, 16#E2#, 16#24#, 16#26#,
+      16#98#, 16#4D#, 16#19#, 16#07#,
+      --  AES-128 gcmEncryptExtIV128.rsp [IVlen = 96] [PTlen = 408] [AADlen = 720] [Taglen = 128] Count = 0: AAD (90 bytes, offset 28)
+      16#5D#, 16#36#, 16#24#, 16#87#, 16#9D#, 16#35#, 16#E4#, 16#68#,
+      16#49#, 16#95#, 16#3E#, 16#45#, 16#A3#, 16#2A#, 16#62#, 16#4D#,
+      16#6A#, 16#6C#, 16#53#, 16#6E#, 16#D9#, 16#85#, 16#7C#, 16#61#,
+      16#3B#, 16#57#, 16#2B#, 16#03#, 16#33#, 16#E7#, 16#01#, 16#55#,
+      16#7A#, 16#71#, 16#3E#, 16#3F#, 16#01#, 16#0E#, 16#CD#, 16#F9#,
+      16#A6#, 16#BD#, 16#6C#, 16#9E#, 16#3E#, 16#44#, 16#B0#, 16#65#,
+      16#20#, 16#86#, 16#45#, 16#AF#, 16#F4#, 16#AA#, 16#BE#, 16#E6#,
+      16#11#, 16#B3#, 16#91#, 16#52#, 16#85#, 16#14#, 16#17#, 16#00#,
+      16#84#, 16#CC#, 16#F5#, 16#87#, 16#17#, 16#7F#, 16#44#, 16#88#,
+      16#F3#, 16#3C#, 16#FB#, 16#5E#, 16#97#, 16#9E#, 16#42#, 16#B6#,
+      16#E1#, 16#CF#, 16#C0#, 16#A6#, 16#02#, 16#38#, 16#98#, 16#2A#,
+      16#7A#, 16#EC#,
+      --  AES-128 gcmEncryptExtIV128.rsp [IVlen = 96] [PTlen = 408] [AADlen = 720] [Taglen = 128] Count = 0: PT (51 bytes, offset 118)
+      16#42#, 16#F7#, 16#58#, 16#83#, 16#69#, 16#86#, 16#95#, 16#4D#,
+      16#B4#, 16#4B#, 16#F3#, 16#7C#, 16#6E#, 16#F5#, 16#E4#, 16#AC#,
+      16#0A#, 16#DA#, 16#F3#, 16#8F#, 16#27#, 16#25#, 16#2A#, 16#1B#,
+      16#82#, 16#D0#, 16#2E#, 16#A9#, 16#49#, 16#C8#, 16#A1#, 16#A2#,
+      16#DB#, 16#C0#, 16#D6#, 16#8B#, 16#56#, 16#15#, 16#BA#, 16#7C#,
+      16#12#, 16#20#, 16#FF#, 16#65#, 16#10#, 16#E2#, 16#59#, 16#F0#,
+      16#66#, 16#55#, 16#D8#,
+      --  AES-128 gcmEncryptExtIV128.rsp [IVlen = 96] [PTlen = 408] [AADlen = 720] [Taglen = 128] Count = 0: CT (51 bytes, offset 169)
+      16#81#, 16#82#, 16#4F#, 16#0E#, 16#0D#, 16#52#, 16#3D#, 16#B3#,
+      16#0D#, 16#3D#, 16#A3#, 16#69#, 16#FD#, 16#C0#, 16#D6#, 16#08#,
+      16#94#, 16#C7#, 16#A0#, 16#A2#, 16#06#, 16#46#, 16#DD#, 16#01#,
+      16#50#, 16#73#, 16#AD#, 16#27#, 16#32#, 16#BD#, 16#98#, 16#9B#,
+      16#14#, 16#A2#, 16#22#, 16#B6#, 16#AD#, 16#57#, 16#AF#, 16#43#,
+      16#E1#, 16#89#, 16#5D#, 16#F9#, 16#DC#, 16#A2#, 16#A5#, 16#34#,
+      16#4A#, 16#62#, 16#CC#,
+      --  AES-128 gcmEncryptExtIV128.rsp [IVlen = 96] [PTlen = 408] [AADlen = 720] [Taglen = 128] Count = 0: Tag (16 bytes, offset 220)
+      16#57#, 16#A3#, 16#EE#, 16#28#, 16#13#, 16#6E#, 16#94#, 16#C7#,
+      16#48#, 16#38#, 16#99#, 16#7A#, 16#E9#, 16#82#, 16#3F#, 16#3A#,
+      --  AES-128 gcmDecrypt128.rsp [PTlen = 408] [AADlen = 720] Count = 2 (FAIL): Key (16 bytes, offset 236)
+      16#19#, 16#86#, 16#31#, 16#0C#, 16#72#, 16#5A#, 16#C9#, 16#4E#,
+      16#CF#, 16#E6#, 16#42#, 16#2E#, 16#75#, 16#FC#, 16#3E#, 16#E7#,
+      --  AES-128 gcmDecrypt128.rsp [PTlen = 408] [AADlen = 720] Count = 2 (FAIL): IV (12 bytes, offset 252)
+      16#93#, 16#EC#, 16#42#, 16#14#, 16#FA#, 16#8E#, 16#6D#, 16#C4#,
+      16#E3#, 16#AF#, 16#C7#, 16#75#,
+      --  AES-128 gcmDecrypt128.rsp [PTlen = 408] [AADlen = 720] Count = 2 (FAIL): AAD (90 bytes, offset 264)
+      16#E8#, 16#0B#, 16#88#, 16#E6#, 16#2C#, 16#49#, 16#C9#, 16#58#,
+      16#B5#, 16#E0#, 16#B8#, 16#B5#, 16#4F#, 16#53#, 16#2D#, 16#9F#,
+      16#F6#, 16#AA#, 16#84#, 16#C8#, 16#A4#, 16#01#, 16#32#, 16#E9#,
+      16#3E#, 16#55#, 16#B5#, 16#9F#, 16#C2#, 16#4E#, 16#8D#, 16#EC#,
+      16#F2#, 16#84#, 16#63#, 16#13#, 16#9F#, 16#15#, 16#5D#, 16#1E#,
+      16#8C#, 16#E4#, 16#EE#, 16#76#, 16#AA#, 16#EE#, 16#FC#, 16#D2#,
+      16#45#, 16#BA#, 16#A0#, 16#FC#, 16#51#, 16#9F#, 16#83#, 16#A5#,
+      16#FB#, 16#9A#, 16#D9#, 16#AA#, 16#40#, 16#C4#, 16#B2#, 16#11#,
+      16#26#, 16#01#, 16#3F#, 16#57#, 16#6C#, 16#42#, 16#72#, 16#C2#,
+      16#CB#, 16#13#, 16#6C#, 16#8F#, 16#D0#, 16#91#, 16#CC#, 16#45#,
+      16#39#, 16#87#, 16#7A#, 16#5D#, 16#1E#, 16#72#, 16#D6#, 16#07#,
+      16#F9#, 16#60#,
+      --  AES-128 gcmDecrypt128.rsp [PTlen = 408] [AADlen = 720] Count = 2 (FAIL): CT (51 bytes, offset 354)
+      16#B1#, 16#78#, 16#EC#, 16#72#, 16#F8#, 16#5A#, 16#31#, 16#1A#,
+      16#C4#, 16#16#, 16#8F#, 16#42#, 16#A4#, 16#B2#, 16#C2#, 16#31#,
+      16#13#, 16#FB#, 16#EA#, 16#4B#, 16#85#, 16#F4#, 16#B9#, 16#DA#,
+      16#BB#, 16#74#, 16#E1#, 16#43#, 16#EB#, 16#1B#, 16#8B#, 16#0A#,
+      16#36#, 16#1E#, 16#02#, 16#43#, 16#ED#, 16#FD#, 16#36#, 16#5B#,
+      16#90#, 16#D5#, 16#B3#, 16#25#, 16#95#, 16#0D#, 16#F0#, 16#AD#,
+      16#A0#, 16#58#, 16#F9#,
+      --  AES-128 gcmDecrypt128.rsp [PTlen = 408] [AADlen = 720] Count = 2 (FAIL): Tag (16 bytes, offset 405)
+      16#8B#, 16#34#, 16#78#, 16#53#, 16#F1#, 16#1D#, 16#75#, 16#E8#,
+      16#1E#, 16#8A#, 16#95#, 16#01#, 16#0B#, 16#E8#, 16#1F#, 16#17#,
+      --  AES-128 long record: tag of the 851-byte Long_Plain under the Count 0 key, IV and AAD (16 bytes, offset 421)
+      16#5C#, 16#E0#, 16#21#, 16#B0#, 16#CF#, 16#EE#, 16#E6#, 16#FD#,
+      16#9D#, 16#16#, 16#1D#, 16#4D#, 16#A3#, 16#07#, 16#9C#, 16#AD#,
+      --  AES-256 gcmEncryptExtIV256.rsp [IVlen = 96] [PTlen = 408] [AADlen = 720] [Taglen = 128] Count = 0: Key (32 bytes, offset 437)
+      16#14#, 16#85#, 16#79#, 16#A3#, 16#CB#, 16#CA#, 16#86#, 16#D5#,
+      16#52#, 16#0D#, 16#66#, 16#C0#, 16#EC#, 16#71#, 16#CA#, 16#5F#,
+      16#7E#, 16#41#, 16#BA#, 16#78#, 16#E5#, 16#6D#, 16#C6#, 16#EE#,
+      16#BD#, 16#56#, 16#6F#, 16#ED#, 16#54#, 16#7F#, 16#E6#, 16#91#,
+      --  AES-256 gcmEncryptExtIV256.rsp [IVlen = 96] [PTlen = 408] [AADlen = 720] [Taglen = 128] Count = 0: IV (12 bytes, offset 469)
+      16#B0#, 16#8A#, 16#5E#, 16#A1#, 16#92#, 16#74#, 16#99#, 16#C6#,
+      16#EC#, 16#BF#, 16#D4#, 16#E0#,
+      --  AES-256 gcmEncryptExtIV256.rsp [IVlen = 96] [PTlen = 408] [AADlen = 720] [Taglen = 128] Count = 0: AAD (90 bytes, offset 481)
+      16#E4#, 16#F9#, 16#63#, 16#F0#, 16#15#, 16#FF#, 16#BB#, 16#99#,
+      16#EE#, 16#33#, 16#49#, 16#BB#, 16#AF#, 16#7E#, 16#8E#, 16#8E#,
+      16#6C#, 16#2A#, 16#71#, 16#C2#, 16#30#, 16#A4#, 16#8F#, 16#9D#,
+      16#59#, 16#86#, 16#0A#, 16#29#, 16#09#, 16#1D#, 16#27#, 16#47#,
+      16#E0#, 16#1A#, 16#5C#, 16#A5#, 16#72#, 16#34#, 16#7E#, 16#24#,
+      16#7D#, 16#25#, 16#F5#, 16#6B#, 16#A7#, 16#AE#, 16#8E#, 16#05#,
+      16#CD#, 16#E2#, 16#BE#, 16#3C#, 16#97#, 16#93#, 16#12#, 16#92#,
+      16#C0#, 16#23#, 16#70#, 16#20#, 16#8E#, 16#CD#, 16#09#, 16#7E#,
+      16#F6#, 16#92#, 16#68#, 16#7F#, 16#EC#, 16#F2#, 16#F4#, 16#19#,
+      16#D3#, 16#20#, 16#01#, 16#62#, 16#A6#, 16#48#, 16#0A#, 16#57#,
+      16#DA#, 16#D4#, 16#08#, 16#A0#, 16#DF#, 16#EB#, 16#49#, 16#2E#,
+      16#2C#, 16#5D#,
+      --  AES-256 gcmEncryptExtIV256.rsp [IVlen = 96] [PTlen = 408] [AADlen = 720] [Taglen = 128] Count = 0: PT (51 bytes, offset 571)
+      16#9D#, 16#0B#, 16#15#, 16#FD#, 16#F1#, 16#BD#, 16#59#, 16#5F#,
+      16#91#, 16#F8#, 16#B3#, 16#AB#, 16#C0#, 16#F7#, 16#DE#, 16#C9#,
+      16#27#, 16#DF#, 16#D4#, 16#79#, 16#99#, 16#35#, 16#A1#, 16#79#,
+      16#5D#, 16#9C#, 16#E0#, 16#0C#, 16#9B#, 16#87#, 16#94#, 16#34#,
+      16#42#, 16#0F#, 16#E4#, 16#2C#, 16#27#, 16#5A#, 16#7C#, 16#D7#,
+      16#B3#, 16#9D#, 16#63#, 16#8F#, 16#B8#, 16#1C#, 16#A5#, 16#2B#,
+      16#49#, 16#DC#, 16#41#,
+      --  AES-256 gcmEncryptExtIV256.rsp [IVlen = 96] [PTlen = 408] [AADlen = 720] [Taglen = 128] Count = 0: CT (51 bytes, offset 622)
+      16#20#, 16#97#, 16#E3#, 16#72#, 16#95#, 16#0A#, 16#5E#, 16#93#,
+      16#83#, 16#C6#, 16#75#, 16#E8#, 16#9E#, 16#EA#, 16#1C#, 16#31#,
+      16#4F#, 16#99#, 16#91#, 16#59#, 16#F5#, 16#61#, 16#13#, 16#44#,
+      16#B2#, 16#98#, 16#CD#, 16#A4#, 16#5E#, 16#62#, 16#84#, 16#37#,
+      16#16#, 16#F2#, 16#15#, 16#F8#, 16#2E#, 16#E6#, 16#63#, 16#91#,
+      16#9C#, 16#64#, 16#00#, 16#2A#, 16#5C#, 16#19#, 16#8D#, 16#78#,
+      16#78#, 16#FD#, 16#3F#,
+      --  AES-256 gcmEncryptExtIV256.rsp [IVlen = 96] [PTlen = 408] [AADlen = 720] [Taglen = 128] Count = 0: Tag (16 bytes, offset 673)
+      16#AD#, 16#BE#, 16#CD#, 16#B0#, 16#D5#, 16#C2#, 16#22#, 16#4D#,
+      16#80#, 16#4D#, 16#28#, 16#86#, 16#FF#, 16#9A#, 16#57#, 16#60#,
+      --  AES-256 gcmDecrypt256.rsp [PTlen = 408] [AADlen = 720] Count = 0 (FAIL): Key (32 bytes, offset 689)
+      16#E3#, 16#6A#, 16#CA#, 16#93#, 16#41#, 16#4B#, 16#13#, 16#F5#,
+      16#31#, 16#3E#, 16#76#, 16#A7#, 16#24#, 16#45#, 16#88#, 16#EE#,
+      16#11#, 16#65#, 16#51#, 16#D1#, 16#F3#, 16#4C#, 16#32#, 16#85#,
+      16#91#, 16#66#, 16#F2#, 16#EB#, 16#0A#, 16#C1#, 16#A9#, 16#B7#,
+      --  AES-256 gcmDecrypt256.rsp [PTlen = 408] [AADlen = 720] Count = 0 (FAIL): IV (12 bytes, offset 721)
+      16#E9#, 16#E7#, 16#01#, 16#B1#, 16#CC#, 16#EF#, 16#6B#, 16#DD#,
+      16#D0#, 16#33#, 16#91#, 16#D8#,
+      --  AES-256 gcmDecrypt256.rsp [PTlen = 408] [AADlen = 720] Count = 0 (FAIL): AAD (90 bytes, offset 733)
+      16#6A#, 16#08#, 16#FE#, 16#6E#, 16#55#, 16#A0#, 16#8F#, 16#28#,
+      16#3C#, 16#EC#, 16#4C#, 16#4B#, 16#37#, 16#67#, 16#6E#, 16#77#,
+      16#0F#, 16#40#, 16#2A#, 16#F6#, 16#10#, 16#2F#, 16#54#, 16#8A#,
+      16#D4#, 16#73#, 16#EC#, 16#62#, 16#36#, 16#DA#, 16#76#, 16#4F#,
+      16#70#, 16#76#, 16#FF#, 16#D4#, 16#1B#, 16#BD#, 16#96#, 16#11#,
+      16#B4#, 16#39#, 16#36#, 16#2D#, 16#89#, 16#96#, 16#82#, 16#B7#,
+      16#B0#, 16#F8#, 16#39#, 16#FC#, 16#5A#, 16#68#, 16#D9#, 16#DF#,
+      16#54#, 16#AF#, 16#D1#, 16#E2#, 16#B3#, 16#C4#, 16#E7#, 16#D0#,
+      16#72#, 16#45#, 16#4E#, 16#E2#, 16#71#, 16#11#, 16#D5#, 16#21#,
+      16#93#, 16#D2#, 16#8B#, 16#9C#, 16#4F#, 16#92#, 16#5D#, 16#2A#,
+      16#8B#, 16#45#, 16#16#, 16#75#, 16#AF#, 16#39#, 16#19#, 16#1A#,
+      16#2C#, 16#BA#,
+      --  AES-256 gcmDecrypt256.rsp [PTlen = 408] [AADlen = 720] Count = 0 (FAIL): CT (51 bytes, offset 823)
+      16#5B#, 16#05#, 16#9A#, 16#C6#, 16#73#, 16#3B#, 16#6D#, 16#E0#,
+      16#E8#, 16#CF#, 16#5B#, 16#88#, 16#B7#, 16#30#, 16#1C#, 16#02#,
+      16#C9#, 16#93#, 16#42#, 16#6F#, 16#71#, 16#BB#, 16#12#, 16#AB#,
+      16#F6#, 16#92#, 16#E9#, 16#DE#, 16#EA#, 16#CF#, 16#AC#, 16#1F#,
+      16#F1#, 16#64#, 16#4C#, 16#87#, 16#D4#, 16#DF#, 16#13#, 16#00#,
+      16#28#, 16#F5#, 16#15#, 16#F0#, 16#FE#, 16#DA#, 16#63#, 16#63#,
+      16#09#, 16#A2#, 16#4D#,
+      --  AES-256 gcmDecrypt256.rsp [PTlen = 408] [AADlen = 720] Count = 0 (FAIL): Tag (16 bytes, offset 874)
+      16#43#, 16#C7#, 16#C9#, 16#C9#, 16#3C#, 16#C2#, 16#65#, 16#FC#,
+      16#8E#, 16#19#, 16#20#, 16#00#, 16#E0#, 16#41#, 16#7B#, 16#5B#,
+      --  AES-256 long record: tag of the 851-byte Long_Plain under the Count 0 key, IV and AAD (16 bytes, offset 890)
+      16#B2#, 16#91#, 16#C4#, 16#BB#, 16#DB#, 16#A9#, 16#6A#, 16#50#,
+      16#F8#, 16#FD#, 16#E0#, 16#E7#, 16#4C#, 16#78#, 16#EC#, 16#9F#);
+
+   --  Bytes of KAT_Data per key size: the encryption vector (key, IV, AAD,
+   --  PT, CT, tag), the FAIL vector (key, IV, AAD, CT, tag), the long tag.
+   KAT_Text_Len : constant N32 := 51;
+   KAT_AAD_Len  : constant N32 := 90;
+   KAT_Long_Len : constant N32 := 851;
+   KAT_128_Len  : constant N32 := 2 * 16 + 2 * 12 + 2 * KAT_AAD_Len
+                                   + 3 * KAT_Text_Len + 3 * 16;
+   KAT_256_Len  : constant N32 := KAT_128_Len + 2 * 16;
+   pragma Assert (KAT_128_Len + KAT_256_Len = KAT_Last + 1);
+
+   --  The long record's plaintext: a fixed pattern, so only its tag is
+   --  stored.
+   function Long_Plain (I : N32) return Byte is
+     (Byte ((I * 31 + 17) mod 256))
+   with Pre => I < KAT_Long_Len;
+
+   --  One key size: encrypt and decrypt the CAVP vector and the long
+   --  record through the prepared paths, reject a forged long record and
+   --  the CAVP FAIL vector with the buffer zeroed.
+   procedure KAT_Key_Size
+     (D : KAT_Image; Base : KAT_Index; Wide : Boolean; OK : out Boolean)
+   with Pre => Base + (if Wide then KAT_256_Len else KAT_128_Len)
+                 <= KAT_Last + 1
+   is
+      K_Len  : constant N32 := (if Wide then 32 else 16);
+      IV     : constant N32 := Base + K_Len;
+      AAD    : constant N32 := IV + 12;
+      PT     : constant N32 := AAD + KAT_AAD_Len;
+      CT     : constant N32 := PT + KAT_Text_Len;
+      Tag    : constant N32 := CT + KAT_Text_Len;
+      F_Key  : constant N32 := Tag + 16;
+      F_IV   : constant N32 := F_Key + K_Len;
+      F_AAD  : constant N32 := F_IV + 12;
+      F_CT   : constant N32 := F_AAD + KAT_AAD_Len;
+      F_Tag  : constant N32 := F_CT + KAT_Text_Len;
+      L_Tag  : constant N32 := F_Tag + 16;
+      Auth   : constant Byte_Seq (0 .. KAT_AAD_Len - 1) :=
+        D (AAD .. AAD + KAT_AAD_Len - 1);
+      F_Auth : constant Byte_Seq (0 .. KAT_AAD_Len - 1) :=
+        D (F_AAD .. F_AAD + KAT_AAD_Len - 1);
+      Nonce   : constant Bytes_12 := Bytes_12 (D (IV .. IV + 11));
+      Context : Prepared_Key;
+      Text    : Byte_Seq (0 .. KAT_Text_Len - 1);
+      Long    : Byte_Seq (0 .. KAT_Long_Len - 1);
+      T       : Bytes_16;
+      Status  : Boolean;
+
+      procedure Prepare_Key (Key : KAT_Index) with
+        Pre  => Key + K_Len - 1 <= KAT_Last,
+        Post => Is_Prepared (Context)
+      is
+      begin
+         if Wide then
+            declare
+               K : AES.AES256_Key :=
+                 AES.Construct (Bytes_32 (D (Key .. Key + 31)));
+            begin
+               Prepare_256 (Context, K);
+               pragma Warnings (GNATprove, Off, "statement has no effect");
+               pragma Warnings (GNATprove, Off, "*is set by*");
+               AES.Sanitize (K);
+               pragma Warnings (GNATprove, On, "*is set by*");
+               pragma Warnings (GNATprove, On, "statement has no effect");
+            end;
+         else
+            declare
+               K : AES.AES128_Key :=
+                 AES.Construct (Bytes_16 (D (Key .. Key + 15)));
+            begin
+               Prepare_128 (Context, K);
+               pragma Warnings (GNATprove, Off, "statement has no effect");
+               pragma Warnings (GNATprove, Off, "*is set by*");
+               AES.Sanitize (K);
+               pragma Warnings (GNATprove, On, "*is set by*");
+               pragma Warnings (GNATprove, On, "statement has no effect");
+            end;
+         end if;
+      end Prepare_Key;
+   begin
+      Prepare_Key (Base);
+
+      --  1. CAVP encryption: ciphertext and tag.
+      Text := D (PT .. PT + KAT_Text_Len - 1);
+      Encrypt_Prepared (Text, T, Nonce, Context, Auth);
+      OK := Text = D (CT .. CT + KAT_Text_Len - 1)
+        and T = Bytes_16 (D (Tag .. Tag + 15));
+
+      --  2. CAVP decryption of the same vector: status and plaintext.
+      Text := D (CT .. CT + KAT_Text_Len - 1);
+      Decrypt_Prepared (Text, Status, Bytes_16 (D (Tag .. Tag + 15)), Nonce,
+                        Context, Auth);
+      OK := OK and Status and Text = D (PT .. PT + KAT_Text_Len - 1);
+
+      --  3. The long record: tag, then decryption back to the pattern.
+      for I in Long'Range loop
+         Long (I) := Long_Plain (I);
+      end loop;
+      Encrypt_Prepared (Long, T, Nonce, Context, Auth);
+      OK := OK and T = Bytes_16 (D (L_Tag .. L_Tag + 15));
+      Decrypt_Prepared (Long, Status, Bytes_16 (D (L_Tag .. L_Tag + 15)),
+                        Nonce, Context, Auth);
+      OK := OK and Status;
+      for I in Long'Range loop
+         OK := OK and Long (I) = Long_Plain (I);
+      end loop;
+
+      --  4. The long record with one tag bit changed: rejected, zeroed.
+      Encrypt_Prepared (Long, T, Nonce, Context, Auth);
+      T (15) := T (15) xor 1;
+      Decrypt_Prepared (Long, Status, T, Nonce, Context, Auth);
+      OK := OK and not Status;
+      for I in Long'Range loop
+         OK := OK and Long (I) = 0;
+      end loop;
+
+      --  5. The CAVP FAIL vector under its own key: rejected, zeroed.
+      Prepare_Key (F_Key);
+      Text := D (F_CT .. F_CT + KAT_Text_Len - 1);
+      Decrypt_Prepared (Text, Status, Bytes_16 (D (F_Tag .. F_Tag + 15)),
+                        Bytes_12 (D (F_IV .. F_IV + 11)), Context, F_Auth);
+      OK := OK and not Status and Text = Byte_Seq'(Text'Range => 0);
+
+      pragma Warnings (GNATprove, Off, "statement has no effect");
+      pragma Warnings (GNATprove, Off, "*is set by*");
+      Clear (Context);
+      pragma Warnings (GNATprove, On, "*is set by*");
+      pragma Warnings (GNATprove, On, "statement has no effect");
+   end KAT_Key_Size;
+
+   procedure Self_Test_With (Flip : in N32; OK : out Boolean) is
+      D : KAT_Image := KAT_Data;
+      OK_128, OK_256 : Boolean;
+   begin
+      if Flip <= D'Last then
+         D (Flip) := D (Flip) xor 1;
+      end if;
+      KAT_Key_Size (D, 0, Wide => False, OK => OK_128);
+      KAT_Key_Size (D, KAT_128_Len, Wide => True, OK => OK_256);
+      OK := OK_128 and OK_256;
+   end Self_Test_With;
+
+   procedure Self_Test (OK : out Boolean) is
+   begin
+      Self_Test_With (N32'Last, OK);
+   end Self_Test;
 
 end SPARKTLSCrypto.AES_GCM;

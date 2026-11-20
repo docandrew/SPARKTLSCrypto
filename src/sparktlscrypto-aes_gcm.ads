@@ -16,6 +16,7 @@ is
    --  a different key, and Clear before releasing the context.
    --  Hardware round keys and GHASH powers are reused on supported CPUs;
    --  the portable path retains the existing one-shot implementation.
+   --  Encrypt_Prepared and Decrypt_Prepared both use the context.
    type Prepared_Key is private;
 
    Unprepared_Key : constant Prepared_Key;
@@ -44,6 +45,29 @@ is
                and Buf'Length > 0
                and Buf'Last < N32'Last
                and AAD'Last < N32'Last;
+
+   --  In-place authenticated decryption with a prepared key. Buf holds
+   --  the ciphertext on entry. If Tag authenticates (N, AAD, Buf), Status
+   --  is True and Buf holds the plaintext; otherwise Status is False and
+   --  every byte of Buf is zero, so no unauthenticated plaintext escapes.
+   --
+   --  Constant time: the tag comparison covers all 16 bytes without an
+   --  early exit, and the plaintext is released or zeroed by masking the
+   --  whole buffer, so the work done (instructions, branches and memory
+   --  addresses) does not depend on the key, the data or whether the tag
+   --  matched; only Status does. An empty Buf authenticates AAD alone.
+   procedure Decrypt_Prepared
+     (Buf     : in out Byte_Seq;
+      Status  :    out Boolean;
+      Tag     : in     Bytes_16;
+      N       : in     Bytes_12;
+      Context : in     Prepared_Key;
+      AAD     : in     Byte_Seq)
+   with Pre  => Is_Prepared (Context)
+                and AAD'First = 0
+                and Buf'Last < N32'Last
+                and AAD'Last < N32'Last,
+        Post => (if not Status then (for all I in Buf'Range => Buf (I) = 0));
 
    ----------------------------------------------------------------------------
    --  AES-128-GCM
@@ -96,6 +120,20 @@ is
                M'Length  = C'Length and then
                C'Last   < N32'Last and then
                AAD'Last < N32'Last;
+
+   --  One-shot in-place decryption: Decrypt_Prepared with a context
+   --  prepared for K and cleared before returning. Same contract.
+   procedure Decrypt_InPlace
+     (Buf    : in out Byte_Seq;
+      Status :    out Boolean;
+      Tag    : in     Bytes_16;
+      N      : in     Bytes_12;
+      K      : in     AES.AES128_Key;
+      AAD    : in     Byte_Seq)
+   with Pre  => AAD'First = 0
+                and Buf'Last < N32'Last
+                and AAD'Last < N32'Last,
+        Post => (if not Status then (for all I in Buf'Range => Buf (I) = 0));
 
    procedure Verify_Empty_Ciphertext
      (Status  :    out Boolean;
@@ -154,6 +192,19 @@ is
                C'Last   < N32'Last and then
                AAD'Last < N32'Last;
 
+   --  One-shot in-place AES-256-GCM decryption; see Decrypt_InPlace.
+   procedure Decrypt_InPlace_256
+     (Buf    : in out Byte_Seq;
+      Status :    out Boolean;
+      Tag    : in     Bytes_16;
+      N      : in     Bytes_12;
+      K      : in     AES.AES256_Key;
+      AAD    : in     Byte_Seq)
+   with Pre  => AAD'First = 0
+                and Buf'Last < N32'Last
+                and AAD'Last < N32'Last,
+        Post => (if not Status then (for all I in Buf'Range => Buf (I) = 0));
+
    procedure Verify_Empty_Ciphertext_256
      (Status  :    out Boolean;
       Tag     : in     Bytes_16;
@@ -164,7 +215,31 @@ is
                AAD'Length > 0 and then
                AAD'Last < N32'Last;
 
+   ----------------------------------------------------------------------------
+   --  Cryptographic algorithm self-test (FIPS 140-3 IG 10.3.A)
+   ----------------------------------------------------------------------------
+   --  Known-answer test of AES-GCM encryption and decryption, AES-128 and
+   --  AES-256, through Prepare_128/256, Encrypt_Prepared and
+   --  Decrypt_Prepared, so on whichever tier this CPU will use. IG 10.3.A
+   --  resolution 1.a and 1.b require the encryption and the decryption
+   --  function each to be self-tested; 1.d requires a test of an
+   --  authenticated mode. Vectors: NIST CAVP gcmEncryptExtIV128/256.rsp
+   --  and gcmDecrypt128/256.rsp (one FAIL vector each), plus an 851-byte
+   --  record that reaches every stripe kernel. A forged tag and the CAVP
+   --  FAIL vectors must be rejected with the buffer zeroed. OK is True iff
+   --  every check passed. To run before the first use of AES-GCM (the
+   --  caller's self-test sequence, e.g. SPARKTLS.Self_Tests).
+   --
+   --  A procedure, not a function: the prepared paths are not annotated
+   --  Always_Terminates, which a function's callees would need to be.
+   procedure Self_Test (OK : out Boolean);
+
 private
+   --  Self_Test with byte Flip of the known-answer data inverted in its
+   --  lowest bit (no change when Flip is past the data): the tests use it
+   --  to show that every byte of every vector is checked.
+   procedure Self_Test_With (Flip : in N32; OK : out Boolean);
+
    type Prepared_Key is record
       Ready    : Boolean := False;
       Is_256   : Boolean := False;
@@ -174,7 +249,9 @@ private
       Rounds   : Byte_Seq (0 .. 239) := (others => 0);
       H        : Bytes_16 := (others => 0);
       Powers_4 : Byte_Seq (0 .. 63) := (others => 0);
-      Powers_16 : Byte_Seq (0 .. 255) := (others => 0);
+      --  H^32 .. H^1 byte-reversed (Compute_H_Powers_32, body) on CPUs
+      --  with a VAES tier; bytes 256 .. 511 are the sixteen-power table.
+      Powers_32 : Byte_Seq (0 .. 511) := (others => 0);
    end record;
 
    Unprepared_Key : constant Prepared_Key := (others => <>);

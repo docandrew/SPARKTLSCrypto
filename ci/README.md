@@ -62,6 +62,26 @@ skipped so the instruction behind them is what gets graded.
 `ci/mnemonics.sh --record` regenerates the lists for review after an
 intentional change.
 
+The AES-GCM decryption work added these mnemonics to the instruction-set
+allowlists: `aes_ni` gained the SSE2 masking loop of `Mask_Bytes` (`pand`,
+`movd`, `pshufd`, `movaps`, `movzbl`, integer `add`/`sub`/`inc`/`dec`/`cmp`/
+`test`, `movslq`, and the branches `jb`/`je`/`jg`/`jmp`, whose conditions
+depend only on the buffer length) and `pshufd $0x4e` in the Montgomery
+reduction of the stitched kernels; `aes_gcm_avx512` gained
+`vbroadcasti32x4` (round-key broadcast) and a `jmp` in its elaboration
+(the CPUID feature test, now also requiring AVX2); `aes_gcm_avx2` is new, with the
+same masking loop on ymm (`vpand`, `vpbroadcastb`, `vmovd`). The data
+instructions are on Intel's data-operand-independent timing list. How the
+control flow is checked: both masking loops run under memcheck with a
+tainted mask in `ct_mask_bytes` (the AVX2 one needs only AVX2, which
+Valgrind executes; a variant that branches on the mask is reported), and
+the SSE2 one also inside `ct_decrypt_prepared`. The stitched stripe
+kernels contain no control flow at all: `tools/generate_gcm_kernels.py`
+asserts that no branch, call, `cmov` or `set` is emitted. Valgrind cannot
+execute VAES, so the VAES kernels are not run under memcheck; their
+evidence is that straight-line construction, the mnemonic gate and the
+dudect lane.
+
 ## ci/fuzz.sh: differential fuzzing of the tiers
 
 `tests/fuzz/diff_fuzz.adb` runs every accelerated tier against its proven
@@ -88,10 +108,17 @@ prints the operands in hex and fails the lane.
 
 `ci/prepared.sh`, included in `ci/check.sh`, runs the independent OpenSSL EVP
 comparison with runtime and contract checks enabled, in both accelerated and
-portable configurations. It requires OpenSSL headers and libcrypto, supplied by
+portable configurations, for encryption (`test_prepared`) and decryption
+(`test_decrypt`, every tier the CPU has). It requires OpenSSL headers and libcrypto, supplied by
 the development shell. The production library retains its Ada/assembly-only
 linkage. See `tests/prepared/README.md` for alignment, lifecycle, timing, and
-benchmark coverage. `ct_prepared` is included in the ctgrind lane.
+benchmark coverage. `ct_prepared`, `ct_decrypt_prepared` and its negative
+control `ct_decrypt_status_leak`, and `ct_mask_bytes` are in the ctgrind
+lane; `dudect_aes_gcm_decrypt` (authentic vs forged tag, tag byte position,
+key classes, an A/A noise control and a canary that masks only forged
+records, on every tier) is in the dudect lane. `ci/kat.sh` runs the NIST CAVP GCM decryption vectors and Wycheproof's
+AES-GCM vectors, and `ci/fuzz.sh` fuzzes decryption on the fastest tier
+against the portable path with forged records.
 
 ## Field25519 carry widths
 

@@ -18,7 +18,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-UNITS=(bignat64_adx p256_gather_avx2 aes_ni ghash_ni hashing-sha256 aes_gcm_avx512 chacha20_avx512
+UNITS=(bignat64_adx p256_gather_avx2 aes_ni ghash_ni hashing-sha256 aes_gcm_avx2 aes_gcm_avx512 chacha20_avx512
        poly1305_avx512 poly1305_avx512_ifma)
 DENY='^(div|idiv|divq|divl|idivq|idivl|rep|repz|repnz|rdrand|rdseed|syscall|int|int3|ud2)$'
 fail=0

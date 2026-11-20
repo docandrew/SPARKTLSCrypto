@@ -45,6 +45,9 @@ is
       if (ECX and 16#0800_0000#) = 0 then   --  OSXSAVE
          return False;
       end if;
+      if (ECX and 16#1000_0000#) = 0 then   --  bit 28: AVX (VEX encoding)
+         return False;
+      end if;
       Asm ("xgetbv",
            Outputs  => (Unsigned_32'Asm_Output ("=a", XCR0_Lo),
                         Unsigned_32'Asm_Output ("=d", XCR0_Hi)),
