@@ -3,6 +3,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 export ALR_NON_INTERACTIVE=1 NO_COLOR=1
+# shellcheck source=ci/flake-loader.sh
+. "$ROOT/ci/flake-loader.sh"
 python3 tools/generate_ed25519_base.py --check
 SPARKTLSCRYPTO_BUILD_MODE=optimize \
 SPARKTLSCRYPTO_RUNTIME_CHECKS=enabled \
@@ -11,6 +13,7 @@ SPARKTLSCRYPTO_CONTRACTS=enabled \
         test_base25519.adb -j"${JOBS:-8}"
 result="$(mktemp)"
 trap 'rm -f "$result"' EXIT
+use_flake_loader tests/base25519/bin/test_base25519
 tests/base25519/bin/test_base25519 >"$result"
 python3 - "$result" <<'PYHASH'
 from pathlib import Path
